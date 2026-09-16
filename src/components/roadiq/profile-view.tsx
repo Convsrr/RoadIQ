@@ -43,10 +43,10 @@ export function ProfileView() {
   return (
     <div>
       <PageHeader eyebrow="Your performance" title="Profile" description="RoadIQ measures judgement. XP records the work you put in." />
-      <section className="mx-auto max-w-3xl space-y-5 px-4 pb-28 sm:px-5">
-        <div className="overflow-hidden rounded-[1.8rem] border border-border bg-card/75 p-5 shadow-[0_24px_80px_rgba(0,0,0,.12)]">
+      <section className="mx-auto max-w-6xl space-y-5 px-4 pb-28 sm:px-5">
+        <div className="overflow-hidden rounded-[1.35rem] border border-border bg-card p-5 sm:p-7">
           <div className="flex items-center gap-4">
-            <div className="grid size-16 place-items-center rounded-full bg-primary text-xl font-bold text-primary-foreground">{snapshot.username.split(" ").map((part) => part[0]).join("").slice(0, 2)}</div>
+            <div className="grid size-16 place-items-center rounded-full bg-primary text-xl font-semibold text-primary-foreground">{snapshot.username.split(" ").map((part) => part[0]).join("").slice(0, 2)}</div>
             <div>
               <h2 className="text-xl font-semibold">{snapshot.username}</h2>
               <p className="mt-1 text-sm text-muted-foreground">{snapshot.rank.calibrated ? snapshot.rank.name : "Rookie · Calibrating"}</p>
@@ -59,7 +59,7 @@ export function ProfileView() {
               ["Answered", snapshot.challengesAnswered],
               ["Accuracy", accuracy],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-2xl bg-secondary/65 p-4">
+              <div key={label} className="rounded-[1rem] border border-border bg-background p-4">
                 <p className="text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground">{label}</p>
                 <p className="mt-1 font-mono text-2xl font-semibold tracking-tight">{value}</p>
               </div>
@@ -72,7 +72,7 @@ export function ProfileView() {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-[1.5rem] border border-border bg-card/60 p-5">
+          <div className="rounded-[1.25rem] border border-border bg-card p-5">
             <p className="text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground">Daily form</p>
             <div className="mt-4 flex items-center gap-5">
               <div><p className="font-mono text-3xl font-semibold">{snapshot.currentStreak}</p><p className="text-xs text-muted-foreground">Current streak</p></div>
@@ -80,13 +80,14 @@ export function ProfileView() {
               <div><p className="font-mono text-3xl font-semibold">{snapshot.longestStreak}</p><p className="text-xs text-muted-foreground">Longest streak</p></div>
             </div>
           </div>
-          <div className="rounded-[1.5rem] border border-border bg-card/60 p-5">
+          <div className="rounded-[1.25rem] border border-border bg-card p-5">
             <p className="text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground">Standing</p>
             <div className="mt-4 flex items-center gap-3"><Trophy className="size-8 text-primary" aria-hidden="true" /><div><p className="font-semibold">Demo percentile unavailable</p><p className="text-xs text-muted-foreground">Live ranking needs 100 calibrated profiles.</p></div></div>
           </div>
         </div>
 
-        <div className="rounded-[1.5rem] border border-border bg-card/60 p-5">
+        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="rounded-[1.25rem] border border-border bg-card p-5">
           <h2 className="text-lg font-semibold">Category performance</h2>
           <div className="mt-5 space-y-4">
             {CATEGORIES.map((category) => {
@@ -97,18 +98,19 @@ export function ProfileView() {
           </div>
         </div>
 
-        <div className="rounded-[1.5rem] border border-border bg-card/60 p-5">
+        <div className="rounded-[1.25rem] border border-border bg-card p-5">
           <h2 className="text-lg font-semibold">Achievements</h2>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {ACHIEVEMENTS.map((achievement) => {
               const earned = snapshot.achievements.some((item) => item.achievementId === achievement.id);
               const Icon = achievementIcons[achievement.icon as keyof typeof achievementIcons] ?? Medal;
-              return <div key={achievement.id} className={cn("flex gap-3 rounded-2xl border p-4", earned ? "border-primary/35 bg-primary/7" : "opacity-55") }><div className={cn("grid size-10 shrink-0 place-items-center rounded-full", earned ? "bg-primary text-primary-foreground" : "bg-secondary")}>{earned ? <Check className="size-4" /> : <Icon className="size-4" />}</div><div><p className="text-sm font-semibold">{achievement.name}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{achievement.description}</p></div></div>;
+              return <div key={achievement.id} className={cn("flex gap-3 rounded-[1rem] border bg-background p-4", earned ? "border-foreground/25" : "opacity-55") }><div className={cn("grid size-10 shrink-0 place-items-center rounded-full", earned ? "bg-primary text-primary-foreground" : "bg-secondary")}>{earned ? <Check className="size-4" /> : <Icon className="size-4" />}</div><div><p className="text-sm font-semibold">{achievement.name}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{achievement.description}</p></div></div>;
             })}
           </div>
         </div>
+        </div>
 
-        <div className="rounded-[1.5rem] border border-border bg-card/60 p-5">
+        <div className="rounded-[1.25rem] border border-border bg-card p-5">
           <h2 className="text-lg font-semibold">Appearance</h2>
           <div className="mt-4 flex flex-wrap gap-2">{(["system", "dark", "light"] as ThemePreference[]).map((theme) => <Button key={theme} variant={progress.theme === theme ? "default" : "outline"} size="sm" onClick={() => changeTheme(theme)} className="capitalize">{theme}</Button>)}</div>
           <div className="mt-6 border-t border-border pt-5"><Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setResetOpen(true)}><RotateCcw className="size-4" />Reset local progress</Button></div>

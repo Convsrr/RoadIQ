@@ -121,12 +121,16 @@ export function ChallengeFeed({
     setProgress(next);
   }, [repository]);
 
-  const start = useCallback(() => {
+  const start = useCallback((challengeId: string) => {
     if (!progress) return;
+    setQueue((items) => [
+      ...items.filter((challenge) => challenge.id === challengeId),
+      ...items.filter((challenge) => challenge.id !== challengeId),
+    ]);
     const next = { ...progress, started: true };
     saveProgress(next);
     document.body.dataset.onboarding = "false";
-    void trackEvent("onboarding_completed", next.actorId);
+    void trackEvent("onboarding_completed", next.actorId, challengeId, { previewChallengeId: challengeId });
   }, [progress, saveProgress]);
 
   const answer = useCallback(async (answerId: string) => {
@@ -279,7 +283,7 @@ export function ChallengeFeed({
   if (!progress) {
     return <div className="grid min-h-[70dvh] place-items-center" aria-label="Loading RoadIQ"><LoaderCircle className="size-7 animate-spin text-primary" /></div>;
   }
-  if (!progress.started && mode === "feed") return <Onboarding onStart={start} />;
+  if (!progress.started && mode === "feed") return <Onboarding onStart={start} challenges={challenges} />;
 
   if (dailyFinished) {
     return (
@@ -309,7 +313,7 @@ export function ChallengeFeed({
   return (
     <>
       <article
-        className="safe-top mx-auto w-full max-w-[35rem] px-3 sm:px-5"
+        className="safe-top mx-auto w-full max-w-6xl px-3 sm:px-5 lg:pt-8"
         onTouchStart={(event) => { touchStartY.current = event.touches[0]?.clientY ?? null; }}
         onTouchEnd={(event) => {
           if (!result || touchStartY.current === null) return;
@@ -318,26 +322,30 @@ export function ChallengeFeed({
           touchStartY.current = null;
         }}
       >
-        <header className="mb-3 flex min-h-11 items-center justify-between gap-3 px-1">
-          <RoadIQLogo compact />
+        <header className="mb-4 flex min-h-11 items-center justify-between gap-3 px-1 lg:mb-6">
+          <div>
+            <RoadIQLogo compact />
+            <span className="ml-3 hidden text-[11px] font-medium text-muted-foreground sm:inline">Make the call</span>
+          </div>
           {mode === "daily" ? (
             <div className="text-right">
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Daily RoadIQ</p>
               <p className="text-sm font-semibold">{dailyCompletedCount} / 5</p>
             </div>
           ) : (
-            <div className="flex items-center gap-2 rounded-full bg-secondary/70 px-3 py-1.5">
+            <div className="flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 shadow-sm">
               <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">RoadIQ</span>
               <strong className="font-mono text-sm">{snapshot?.roadIqScore ?? 100}</strong>
             </div>
           )}
         </header>
 
-        <ChallengeImage key={current.id} challenge={current} priority />
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.08fr)_minmax(24rem,.92fr)] lg:gap-8">
+          <ChallengeImage key={current.id} challenge={current} priority />
 
-        <div className="px-1 pb-5 pt-5">
+        <div className="rounded-[1.4rem] border border-border bg-card p-5 shadow-[0_24px_70px_rgba(0,0,0,.07)] sm:p-6 lg:sticky lg:top-[6.5rem] lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               {current.region === "global" ? "Global" : current.region.toUpperCase()} · {current.challengeType === "community" ? "Community call" : "Objective"}
             </p>
             {!result && (
@@ -346,7 +354,7 @@ export function ChallengeFeed({
               </Button>
             )}
           </div>
-          <h1 className="text-balance text-[clamp(1.55rem,6.7vw,2.2rem)] font-semibold leading-[1.08] tracking-[-0.045em]">{current.question}</h1>
+          <h1 className="text-balance text-[clamp(1.75rem,5vw,2.8rem)] font-semibold leading-[1.02] tracking-[-0.055em]">{current.question}</h1>
 
           {!result ? (
             <div className="mt-5 grid gap-2.5" role="group" aria-label="Choose one answer">
@@ -359,12 +367,12 @@ export function ChallengeFeed({
                     disabled={busy}
                     onClick={() => void answer(choice.id)}
                     className={cn(
-                      "group flex min-h-14 w-full items-center justify-between rounded-2xl border bg-card/75 px-4 py-3 text-left text-[15px] font-semibold shadow-[0_8px_30px_rgba(0,0,0,.08)] transition-[background-color,border-color,transform] hover:border-primary/45 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.99] disabled:cursor-wait disabled:opacity-70 motion-reduce:transition-none",
-                      selected && "border-primary bg-primary/10",
+                      "group flex min-h-14 w-full items-center justify-between rounded-[1rem] border bg-background px-4 py-3 text-left text-[15px] font-medium transition-[background-color,border-color,transform] hover:border-foreground/30 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.99] disabled:cursor-wait disabled:opacity-70 motion-reduce:transition-none",
+                      selected && "border-foreground bg-accent",
                     )}
                   >
                     <span>{choice.text}</span>
-                    <span className="grid size-7 shrink-0 place-items-center rounded-full border border-border font-mono text-[11px] text-muted-foreground group-hover:border-primary/40 group-hover:text-primary">
+                    <span className="grid size-7 shrink-0 place-items-center rounded-full border border-border bg-card font-mono text-[11px] text-muted-foreground group-hover:border-foreground/30 group-hover:text-foreground">
                       {busy && selected ? <LoaderCircle className="size-3.5 animate-spin" aria-label="Saving answer" /> : index + 1}
                     </span>
                   </button>
@@ -382,7 +390,7 @@ export function ChallengeFeed({
                 reaction={progress.reactions[current.id]}
                 onReact={react}
               />
-              <div className="mt-5 rounded-[1.4rem] bg-background/82 p-2">
+              <div className="mt-5 rounded-[1.15rem] bg-background p-2">
                 <Button size="lg" className="w-full" onClick={goNext}>
                   {mode === "daily" && dailyCompletedCount >= 5 ? "Finish Daily" : "Next challenge"}
                   <ArrowRight className="size-5" aria-hidden="true" />
@@ -390,6 +398,7 @@ export function ChallengeFeed({
               </div>
             </div>
           )}
+        </div>
         </div>
       </article>
 

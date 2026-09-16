@@ -9,13 +9,22 @@ test.beforeEach(async ({ page }) => {
 test("new visitor can start, answer, see results and continue", async ({ page }) => {
   await page.reload();
   await expect(page.getByRole("heading", { name: /How good a driver/ })).toBeVisible();
-  await page.getByRole("button", { name: "Start" }).click();
+  await page.getByRole("button", { name: "Try this question" }).click();
   const firstQuestion = await page.getByRole("heading", { level: 1 }).textContent();
   await page.getByRole("group", { name: "Choose one answer" }).getByRole("button").first().click();
   await expect(page.getByText(/drivers answered/)).toBeVisible();
   await expect(page.getByText(/XP total/)).toBeVisible();
   await page.getByRole("button", { name: /Next challenge/ }).click();
   await expect(page.getByRole("heading", { level: 1 })).not.toHaveText(firstQuestion ?? "");
+});
+
+test("question preview controls the first challenge", async ({ page }) => {
+  await page.reload();
+  const preview = page.getByRole("button", { name: /Preview question: Heavy rain starts/ }).first();
+  await preview.click();
+  await expect(page.getByRole("heading", { level: 2, name: /Heavy rain starts/ })).toBeVisible();
+  await page.getByRole("button", { name: "Try this question" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: /Heavy rain starts/ })).toBeVisible();
 });
 
 test("community challenge shows a community result", async ({ page }) => {
@@ -48,7 +57,7 @@ test("direct challenge progress survives refresh", async ({ page }) => {
 
 test("keyboard controls answer and continue", async ({ page }) => {
   await page.reload();
-  await page.getByRole("button", { name: "Start" }).click();
+  await page.getByRole("button", { name: "Try this question" }).click();
   const firstQuestion = await page.getByRole("heading", { level: 1 }).textContent();
   await page.keyboard.press("1");
   await expect(page.getByRole("region", { name: "Challenge result" })).toBeVisible();
@@ -94,7 +103,7 @@ test("compact phone widths do not overflow horizontally", async ({ page }) => {
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    await expect(page.getByRole("button", { name: "Start" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Try this question" })).toBeVisible();
     const overflows = await page.evaluate(
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
     );
@@ -104,7 +113,9 @@ test("compact phone widths do not overflow horizontally", async ({ page }) => {
 
 test("core and result screens have no serious accessibility violations", async ({ page }) => {
   await page.reload();
-  await page.getByRole("button", { name: "Start" }).click();
+  const onboardingResults = await new AxeBuilder({ page }).analyze();
+  expect(onboardingResults.violations.filter((violation) => ["critical", "serious"].includes(violation.impact ?? ""))).toEqual([]);
+  await page.getByRole("button", { name: "Try this question" }).click();
   const challengeResults = await new AxeBuilder({ page }).analyze();
   expect(challengeResults.violations.filter((violation) => ["critical", "serious"].includes(violation.impact ?? ""))).toEqual([]);
   await page.getByRole("group", { name: "Choose one answer" }).getByRole("button").first().click();

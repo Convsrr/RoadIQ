@@ -33,12 +33,12 @@ export function ChallengeResult({
     <section className="animate-rise-in space-y-5" aria-live="polite" aria-label="Challenge result">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
-          <span className={cn("grid size-8 place-items-center rounded-full", community || result.isCorrect ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive") }>
+          <span className={cn("grid size-8 place-items-center rounded-full border", community || result.isCorrect ? "border-success/25 bg-success/10 text-success" : "border-destructive/25 bg-destructive/10 text-destructive") }>
             {community || result.isCorrect ? <Check className="size-4" aria-hidden="true" /> : <X className="size-4" aria-hidden="true" />}
           </span>
           <h2 className="text-xl font-semibold tracking-tight">{status}</h2>
         </div>
-        <div className="rounded-full bg-primary/12 px-3 py-1.5 text-sm font-bold text-primary">
+        <div className="rounded-full bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground">
           +{result.xpAwarded} XP
         </div>
       </div>
@@ -49,12 +49,12 @@ export function ChallengeResult({
           const selected = answer.id === result.selectedAnswerId;
           const correct = answer.id === result.correctAnswerId;
           return (
-            <div key={answer.id} className={cn("relative overflow-hidden rounded-xl border bg-card/70 px-4 py-3", selected && "border-primary/50") }>
-              <div className="absolute inset-y-0 left-0 bg-primary/12 animate-bar-in" style={{ width: `${percentage}%`, animationDelay: `${index * 60}ms` }} />
+            <div key={answer.id} className={cn("relative overflow-hidden rounded-[.9rem] border bg-background px-4 py-3", selected && "border-foreground/30") }>
+              <div className="absolute inset-y-0 left-0 bg-foreground/7 animate-bar-in" style={{ width: `${percentage}%`, animationDelay: `${index * 60}ms` }} />
               <div className="relative flex items-center justify-between gap-3 text-sm">
                 <span className="flex items-center gap-2 font-medium">
                   {answer.text}
-                  {selected && <span className="text-[10px] font-bold uppercase tracking-wider text-primary">Your answer</span>}
+                  {selected && <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Your answer</span>}
                   {!community && correct && <Check className="size-4 text-success" aria-label="Correct answer" />}
                 </span>
                 <span className="font-mono font-semibold tabular-nums">{percentage}%</span>
@@ -66,11 +66,11 @@ export function ChallengeResult({
 
       <p className="text-xs font-medium text-muted-foreground">{result.totalResponses.toLocaleString()} drivers answered</p>
 
-      <div className="rounded-2xl bg-secondary/65 p-4">
+      <div className="rounded-[1rem] border border-border bg-background p-4">
         <p className="text-sm leading-6 text-foreground/90">{challenge.explanation}</p>
       </div>
 
-      <div className="flex items-center justify-between gap-4 rounded-2xl border border-border/80 px-4 py-3">
+      <div className="flex items-center justify-between gap-4 rounded-[1rem] bg-secondary px-4 py-3">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">RoadIQ</p>
           <div className="mt-0.5 flex items-baseline gap-2">
@@ -87,8 +87,8 @@ export function ChallengeResult({
       </div>
 
       {result.newlyEarnedAchievements.length > 0 && (
-        <div className="rounded-2xl border border-primary/35 bg-primary/8 p-4">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">Achievement unlocked</p>
+        <div className="rounded-[1rem] border border-success/25 bg-success/8 p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-success">Achievement unlocked</p>
           <p className="mt-1 font-semibold">{result.newlyEarnedAchievements[0].name}</p>
           <p className="mt-1 text-sm text-muted-foreground">{result.newlyEarnedAchievements[0].description}</p>
         </div>

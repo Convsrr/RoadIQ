@@ -2,9 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { GeistMono, GeistSans } from "geist/font";
 import { AppShell } from "@/components/roadiq/app-shell";
 import { Providers } from "@/components/providers";
+import { siteUrl } from "@/lib/site-url";
 import "./globals.css";
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+const appUrl = siteUrl();
 
 export const metadata: Metadata = {
   metadataBase: new URL(appUrl),
@@ -22,14 +23,14 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#0B0B0C" },
-    { media: "(prefers-color-scheme: light)", color: "#F6F2EA" },
+    { media: "(prefers-color-scheme: dark)", color: "#111110" },
+    { media: "(prefers-color-scheme: light)", color: "#FBFBFA" },
   ],
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}>
         <a href="#main-content" className="fixed left-3 top-3 z-[100] -translate-y-24 rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground focus:translate-y-0">
           Skip to content
