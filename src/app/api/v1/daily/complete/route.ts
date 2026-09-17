@@ -9,6 +9,8 @@ import {
 import { dailyChallengeIds } from "@/lib/services/feed";
 import { evaluateAchievements } from "@/lib/services/achievements";
 import { addDailyCompletion, calculateStreaks } from "@/lib/services/streaks";
+import { api } from "../../../../../../convex/_generated/api";
+import { getConvexClient, isConvexBackendEnabled } from "@/lib/convex/server";
 
 export async function POST(request: Request) {
   const actorId = actorIdFromRequest(request);
@@ -18,6 +20,14 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { date?: unknown } | null;
   if (!body || typeof body.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
     return NextResponse.json({ error: "Invalid Daily date." }, { status: 400 });
+  }
+  if (isConvexBackendEnabled()) {
+    try {
+      const result = await getConvexClient().mutation(api.daily.completeDaily, { sessionId: actorId, date: body.date });
+      return NextResponse.json(result);
+    } catch {
+      return NextResponse.json({ error: "Complete all five Daily challenges first." }, { status: 409 });
+    }
   }
 
   const state = getMockActorState(actorId);

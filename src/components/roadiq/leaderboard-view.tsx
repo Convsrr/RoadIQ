@@ -26,13 +26,30 @@ function row(entry: LeaderboardEntry) {
 export function LeaderboardView() {
   const [period, setPeriod] = useState<"week" | "all">("week");
   const [progress, setProgress] = useState<LocalProgress | null>(null);
+  const [remoteEntries, setRemoteEntries] = useState<LeaderboardEntry[] | null>(null);
   useEffect(() => {
     const stored = new LocalProgressRepository().load();
     queueMicrotask(() => setProgress(stored));
   }, []);
-  const entries = useMemo(() => LEADERBOARD_FIXTURES.map((entry) => period === "week" ? { ...entry, xp: Math.round(entry.xp * 0.18) } : entry), [period]);
+  useEffect(() => {
+    if (!progress) return;
+    let cancelled = false;
+    void fetch(`/api/v1/leaderboard?period=${period}`, {
+      headers: { "x-roadiq-actor-id": progress.actorId },
+    })
+      .then(async (response) => response.ok ? await response.json() as { entries?: LeaderboardEntry[]; mode?: string } : null)
+      .then((body) => {
+        if (!cancelled) setRemoteEntries(body?.mode === "convex" && Array.isArray(body.entries) ? body.entries : null);
+      })
+      .catch(() => {
+        if (!cancelled) setRemoteEntries(null);
+      });
+    return () => { cancelled = true; };
+  }, [period, progress]);
+  const fallbackEntries = useMemo(() => LEADERBOARD_FIXTURES.map((entry) => period === "week" ? { ...entry, xp: Math.round(entry.xp * 0.18) } : entry), [period]);
+  const entries = remoteEntries ?? fallbackEntries;
   const current = progress ? playerSnapshot(progress) : null;
-  const currentEntry: LeaderboardEntry | null = current ? {
+  const currentEntry: LeaderboardEntry | null = current && !remoteEntries?.some((entry) => entry.isCurrentUser) ? {
     id: current.actorId,
     rank: Math.max(13, 220 - Math.floor(current.xp / 50)),
     username: current.username,
@@ -55,7 +72,7 @@ export function LeaderboardView() {
         </div>
         <div className="mt-4 flex items-center gap-2 rounded-[1rem] border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
           <Crown className="size-4" aria-hidden="true" />
-          Demo leaderboard data
+          {remoteEntries ? "Live Convex leaderboard" : "Demo leaderboard data"}
         </div>
         </div>
         <div className="rounded-[1.35rem] border border-border bg-card p-2 sm:p-3"><div className="space-y-2">{entries.map(row)}</div></div>

@@ -7,6 +7,8 @@ import {
 } from "@/lib/repositories/mock-progress.server";
 import { calculateRoadIq, getRank } from "@/lib/services/scoring";
 import { calculateStreaks } from "@/lib/services/streaks";
+import { api } from "../../../../../convex/_generated/api";
+import { getConvexClient, isConvexBackendEnabled } from "@/lib/convex/server";
 
 function snapshot(actorId: string) {
   const state = getMockActorState(actorId);
@@ -37,6 +39,10 @@ export async function GET(request: Request) {
       message: "Mock progress is stored on this device.",
     });
   }
+  if (isConvexBackendEnabled()) {
+    const result = await getConvexClient().mutation(api.players.ensureAnonymous, { sessionId: actorId });
+    return NextResponse.json({ profile: result.profile, mode: "convex" });
+  }
   return NextResponse.json({ profile: snapshot(actorId), mode: "mock" });
 }
 
@@ -49,6 +55,21 @@ export async function PUT(request: Request) {
   const parsed = mockProgressImportSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Local progress could not be imported." }, { status: 400 });
+  }
+  if (isConvexBackendEnabled()) {
+    try {
+      const result = await getConvexClient().mutation(api.players.importProgress, {
+        sessionId: actorId,
+        responses: parsed.data.responses.map((response) => ({
+          ...response,
+          answeredAt: Date.parse(response.answeredAt),
+        })),
+        dailyDates: parsed.data.dailyDates,
+      });
+      return NextResponse.json({ profile: result.profile, imported: true, mode: "convex" });
+    } catch {
+      return NextResponse.json({ error: "Local progress could not be imported." }, { status: 400 });
+    }
   }
   importMockActorProgress(actorId, parsed.data);
   return NextResponse.json({ profile: snapshot(actorId), imported: true, mode: "mock" });

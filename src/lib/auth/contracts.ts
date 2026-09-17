@@ -1,5 +1,5 @@
 export interface AuthState {
-  mode: "mock" | "supabase";
+  mode: "mock" | "convex";
   actorId: string | null;
   anonymous: boolean;
   email: string | null;

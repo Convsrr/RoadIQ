@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 
 type FeedMode = "feed" | "daily" | "direct";
 
-async function hydrateMockService(progress: LocalProgress): Promise<void> {
+async function hydrateProgressService(progress: LocalProgress): Promise<void> {
   const response = await fetch("/api/v1/me", {
     method: "PUT",
     headers: {
@@ -59,6 +59,7 @@ export function ChallengeFeed({
   const [error, setError] = useState<string | null>(null);
   const [signupOpen, setSignupOpen] = useState(false);
   const [dailyFinished, setDailyFinished] = useState(false);
+  const hydratedActorId = useRef<string | null>(null);
   const touchStartY = useRef<number | null>(null);
   const dailyDate = useMemo(() => localDateKey(), []);
 
@@ -103,6 +104,12 @@ export function ChallengeFeed({
       setProgress((currentProgress) => currentProgress ?? stored);
       setQueue(ordered);
     });
+    if (hydratedActorId.current !== stored.actorId) {
+      hydratedActorId.current = stored.actorId;
+      void hydrateProgressService(stored).catch(() => {
+        hydratedActorId.current = null;
+      });
+    }
     void trackEvent("app_opened", stored.actorId, undefined, { mode });
     return () => {
       delete document.body.dataset.onboarding;
@@ -140,7 +147,6 @@ export function ChallengeFeed({
     setError(null);
     const idempotencyKey = globalThis.crypto.randomUUID();
     try {
-      await hydrateMockService(progress);
       const response = await fetch("/api/v1/responses", {
         method: "POST",
         headers: {
@@ -244,7 +250,10 @@ export function ChallengeFeed({
     saveProgress(next);
     void fetch("/api/v1/reactions", {
       method: "PUT",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-roadiq-actor-id": progress.actorId,
+      },
       body: JSON.stringify({ challengeId: current.id, reaction }),
     });
     void trackEvent("challenge_reacted", progress.actorId, current.id, { reaction });
@@ -406,7 +415,7 @@ export function ChallengeFeed({
         <DialogContent>
           <DialogTitle>Save your RoadIQ</DialogTitle>
           <DialogDescription>
-            Your RoadIQ is {snapshot?.roadIqScore}. Mock mode keeps this progress on this device. Connect Supabase to enable email and Google account linking.
+            Your RoadIQ is {snapshot?.roadIqScore}. This browser keeps a local copy while the configured RoadIQ backend stores progress anonymously. Account linking is ready for a future RoadIQ sign-in provider.
           </DialogDescription>
           <div className="mt-6 rounded-2xl bg-secondary/70 p-4">
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">On-device progress</p>

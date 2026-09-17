@@ -1,9 +1,11 @@
 import { ImageResponse } from "next/og";
-import { findPublicChallenge } from "@/data/challenges.server";
+import { findRuntimeChallenge } from "@/lib/repositories/challenges.server";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const challenge = findPublicChallenge(id);
+  const challenge = await findRuntimeChallenge(id);
   if (!challenge) return new Response("Challenge not found", { status: 404 });
   return new ImageResponse(
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: "#0b0b0c", color: "#f5f1e8", fontFamily: "sans-serif", padding: "64px" }}>

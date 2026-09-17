@@ -7,6 +7,8 @@ import {
   saveMockActorState,
 } from "@/lib/repositories/mock-progress.server";
 import { calculateStreaks } from "@/lib/services/streaks";
+import { api } from "../../../../../convex/_generated/api";
+import { getConvexClient, isConvexBackendEnabled } from "@/lib/convex/server";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -20,6 +22,22 @@ export async function POST(request: Request) {
   const actorId = actorIdFromRequest(request);
   if (!actorId) {
     return NextResponse.json({ error: "Anonymous player identity is required." }, { status: 401 });
+  }
+  if (isConvexBackendEnabled()) {
+    try {
+      const result = await getConvexClient().mutation(api.progress.submitResponse, {
+        sessionId: actorId,
+        ...parsed.data,
+      });
+      return NextResponse.json({ result, mode: "convex" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "UNKNOWN";
+      const status = message.includes("CHALLENGE_NOT_FOUND") ? 404 : 400;
+      return NextResponse.json(
+        { error: status === 404 ? "Challenge not found." : "That answer is unavailable." },
+        { status },
+      );
+    }
   }
   try {
     const state = getMockActorState(actorId);

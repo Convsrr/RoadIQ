@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ChallengeFeed } from "@/components/roadiq/challenge-feed";
-import { findPublicChallenge, listPublicChallenges } from "@/data/challenges.server";
+import { findRuntimeChallenge, listRuntimeChallenges } from "@/lib/repositories/challenges.server";
 
 type Props = { params: Promise<{ challengeId: string }> };
 
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { challengeId } = await params;
-  const challenge = findPublicChallenge(challengeId);
+  const challenge = await findRuntimeChallenge(challengeId);
   if (!challenge) return { title: "Challenge not found" };
   return {
     title: challenge.question,
@@ -24,7 +26,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function ChallengePage({ params }: Props) {
   const { challengeId } = await params;
-  const challenge = findPublicChallenge(challengeId);
+  const challenge = await findRuntimeChallenge(challengeId);
   if (!challenge) notFound();
-  return <ChallengeFeed challenges={listPublicChallenges()} mode="direct" directChallengeId={challenge.id} />;
+  return <ChallengeFeed challenges={await listRuntimeChallenges()} mode="direct" directChallengeId={challenge.id} />;
 }

@@ -12,14 +12,15 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "seed:supabase": "node scripts/seed-supabase.mjs",
+    "convex:dev": "convex dev",
+    "convex:deploy": "convex deploy",
+    "seed:convex": "node --env-file-if-exists=.env.local scripts/seed-convex.mjs",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
-    "@supabase/ssr": "0.12.4",
-    "@supabase/supabase-js": "2.112.3",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "convex": "^1.46.0",
     "geist": "1.7.2",
     "lucide-react": "1.33.0",
     "next": "16.3.0",

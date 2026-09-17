@@ -23,9 +23,9 @@ export interface AnswerChoice {
 }
 
 export interface ImageAttribution {
-  provider: "Unsplash";
+  provider: string;
   creator: string;
-  sourceUrl: string;
+  sourceUrl?: string;
   licenseNote: string;
 }
 

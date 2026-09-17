@@ -1,6 +1,8 @@
 import { ChallengeFeed } from "@/components/roadiq/challenge-feed";
-import { listPublicChallenges } from "@/data/challenges.server";
+import { listRuntimeChallenges } from "@/lib/repositories/challenges.server";
 
-export default function HomePage() {
-  return <ChallengeFeed challenges={listPublicChallenges()} />;
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  return <ChallengeFeed challenges={await listRuntimeChallenges()} />;
 }

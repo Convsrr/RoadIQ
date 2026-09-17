@@ -20,7 +20,10 @@ export async function trackEvent(
   try {
     await fetch("/api/v1/events", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-roadiq-actor-id": actorId,
+      },
       body: JSON.stringify(event),
       keepalive: true,
     });

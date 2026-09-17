@@ -1,13 +1,14 @@
 import { ImageResponse } from "next/og";
-import { findPublicChallenge } from "@/data/challenges.server";
+import { findRuntimeChallenge } from "@/lib/repositories/challenges.server";
 
 export const alt = "RoadIQ driving challenge";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
+export const dynamic = "force-dynamic";
 
 export default async function OpenGraphImage({ params }: { params: Promise<{ challengeId: string }> }) {
   const { challengeId } = await params;
-  const challenge = findPublicChallenge(challengeId);
+  const challenge = await findRuntimeChallenge(challengeId);
   return new ImageResponse(
     <div style={{ width: "100%", height: "100%", display: "flex", position: "relative", background: "#0b0b0c", color: "#f5f1e8", overflow: "hidden", fontFamily: "sans-serif" }}>
       {challenge && <>

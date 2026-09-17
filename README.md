@@ -1,12 +1,15 @@
 # RoadIQ
 
-RoadIQ is a mobile-first visual driving judgement game. A player sees an automotive situation, makes a call, receives an immediate result with community percentages, earns XP and moves into the next challenge.
+RoadIQ is a mobile-first visual driving judgement game. Players see a driving situation, choose an answer, receive the result and community percentages, then build XP, RoadIQ, Daily streaks and achievements.
 
-The checkout runs as a complete mock product without accounts or external credentials. Supabase files provide a production activation path, but this repository does not claim that a live project has been migrated or verified.
+The product has two deliberately separate modes:
 
-## Run locally
+- Mock mode remains the default for fast local product work and retains the existing browser progression experience.
+- Convex mode is the only production backend path. The same public Convex functions are suitable for web, iOS and Android clients.
 
-Requirements: Node.js 22 or newer and npm.
+## Local development
+
+Requirements: Node.js 22+ and npm.
 
 ```bash
 cp .env.example .env.local
@@ -14,7 +17,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Leave the Supabase variables blank for mock mode.
+Open [http://localhost:3000](http://localhost:3000). With `ROADIQ_BACKEND` unset, the full consumer product stays in mock mode and needs no account, database, model credential or external generation call.
 
 Useful checks:
 
@@ -26,61 +29,79 @@ npm run test:e2e
 npm run build
 ```
 
-## Mock mode
-
-Mock mode is the default and supports the full consumer flow:
-
-- 24 image-led challenges across all six categories and four difficulties
-- objective and community results with seeded vote distributions
-- anonymous local identity, responses, XP, RoadIQ, ranks and achievements
-- Daily sets, duplicate-safe completion bonus, streaks, leaderboard and Profile
-- direct challenge URLs, Open Graph images, 9:16 share cards and PWA shell
-
-RoadIQ stores progress under `roadiq:progress:v1` in browser local storage. Reset it from Profile or clear site data. Before a mock submission, the app imports only challenge IDs, answer IDs and timestamps into the server-side mock service, which revalidates and reconstructs XP and correctness rather than trusting saved result fields. The public response body remains `{ challengeId, answerId, idempotencyKey }`. Public challenge payloads exclude fixture votes and correct-answer keys; correctness is returned only after a valid submission.
-
-Seed photography uses remote Unsplash development images. Each challenge records provider, creator label, source URL and a development-license note in `src/data/challenges.server.ts`. Review and replace image rights metadata before a public production launch.
-
 ## Architecture
 
-The UI consumes public domain types and application contracts. Mock evaluation and Supabase use the same response shape:
+```text
+Next.js web client ─┐
+iOS / Android ─────┼──> Convex functions + Convex storage
+Image Factory ─────┘
+```
 
-- `src/lib/domain` contains stable product types and scoring configuration.
-- `src/lib/services` owns scoring, feed selection, percentages, achievements and streak rules.
-- `src/lib/repositories` defines the adapter contracts and local/Supabase implementations.
-- `src/app/api/v1` exposes versioned challenge, response, Daily, reaction, event and leaderboard routes.
-- `supabase/migrations` owns the production schema, secure functions and RLS policies.
+- `convex/schema.ts` defines challenges, server-only objective keys, players, responses, stats, Daily state, reactions, analytics, achievements, entitlements and image-production records.
+- `convex/challenges.ts`, `progress.ts`, `daily.ts`, `players.ts`, `reactions.ts`, `analytics.ts` and `leaderboard.ts` are mobile-ready backend contracts.
+- Objective answer keys live in `objectiveAnswerKeys`; public challenge queries never return them. `progress.submitResponse` computes correctness, XP, RoadIQ, achievements and idempotency on the server.
+- `src/app/api/v1` provides the current web compatibility layer. It calls Convex only when `ROADIQ_BACKEND=convex`; otherwise it preserves the existing mock behavior.
+- `src/lib/repositories/challenges.server.ts` makes pages, direct challenge links, OG cards and share cards read active Convex content at request time. Publishing a challenge image therefore needs no Next.js redeploy.
+- `entitlements` holds a neutral free/pro capability snapshot. No billing provider is coupled to gameplay.
 
-Durable mock progress stays on the client, while the mock application service mirrors authoritative response and Daily-completion contracts for the active runtime. Live mode moves those operations to `submit_challenge_response` and `complete_daily`, which validate the authenticated actor, challenge and answer before awarding XP, streaks, achievements or score changes.
+## Move to Convex
 
-## Activate Supabase
+1. Create or select a Convex deployment, then run `npm run convex:dev` locally. The CLI writes `NEXT_PUBLIC_CONVEX_URL` and `CONVEX_DEPLOYMENT` into `.env.local`.
+2. Set the same `ROADIQ_SEED_TOKEN` in the Convex deployment and your local shell or `.env.local`. This secret is required by the idempotent seed mutation and is never a browser value.
+3. Run `npm run seed:convex`. It imports `CHALLENGE_SEEDS`, answer choices, private objective keys, fixture stats, legacy image assets, visual specifications and achievement definitions. Re-running it updates source copy without duplicating records.
+4. Set `ROADIQ_BACKEND=convex` in the Next.js environment only after seeding succeeds. The web app then reads challenge content and progress from Convex while retaining local browser progress as a migration source.
+5. Run the migration smoke checks below before directing production traffic.
 
-1. Create a Supabase project and apply `supabase/migrations/202608210001_roadiq_core.sql` with the Supabase CLI or SQL editor.
-2. Enable Anonymous Sign-Ins and Manual Identity Linking in Auth settings. Configure email OTP and Google only if you intend to offer them.
-3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `.env.local` and the deployment environment.
-4. Set `SUPABASE_SERVICE_ROLE_KEY` in your local shell, run `npm run seed:supabase`, then remove the key from the shell when the script finishes.
-5. Run credential-backed smoke tests before routing consumer traffic to the live adapter.
+Legacy local progress imports through `players.importProgress`. The client sends only prior challenge IDs, answer IDs, idempotency keys and timestamps; Convex re-validates the challenge and answer, reconstructs correctness and XP, prevents duplicate awards, and adds a Daily completion only when the server can verify all five Daily responses. Regular play never accepts client XP, score, streak or achievement values.
 
-The repository includes Supabase auth and challenge adapters, but deliberately leaves adapter selection in the application composition layer. Setting credentials alone does not claim or force a live cutover; wire the live adapters after migration, seed and RLS smoke tests pass against the target project.
+`players.linkAuthenticatedIdentity` is the future Convex Auth seam. It retains the anonymous user row, responses and stats before linking a token identity. Configure a Convex Auth provider before exposing it in the consumer UI.
 
-`importAnonymousProgress` replays on-device responses with their original idempotency keys through the same secure RPCs, then replays unique Daily dates. This is the account-conversion seam for moving a mock player into an authenticated Supabase identity without duplicating rewards.
+## RoadIQ Image Factory
 
-The service-role key is operator-only. Never expose it through a `NEXT_PUBLIC_*` variable. The runtime does not require it. Anonymous users receive a normal Supabase user ID, so email or Google linking can retain the same profile and progress.
+`/image-review` is an internal route and is intentionally absent from RoadIQ navigation. It is unavailable unless all of the following are configured:
 
-The migration separates objective answer keys from public answer copy. RLS and column grants prevent players from writing XP, RoadIQ scores, correctness, Daily bonuses, aggregate events or achievements. Security-definer functions perform those updates with fixed search paths and idempotency constraints.
+```env
+ROADIQ_BACKEND=convex
+ROADIQ_IMAGE_FACTORY_ENABLED=1
+ROADIQ_IMAGE_FACTORY_TOKEN=a-long-random-operator-secret
+```
 
-## PWA and offline behavior
+Set the same Image Factory environment values in the Next.js deployment and the Convex deployment. Sign in to `/image-review` with the operator token; the browser receives only an HTTP-only, same-site session cookie. The token is passed to privileged Convex functions from the Next.js server, never from ordinary player requests.
 
-The manifest includes 192px, 512px and maskable icons. The service worker caches the offline page, icons and versioned static assets. It never caches API requests, responses or result payloads. Production hosting must use HTTPS for installation and service-worker support.
+The workflow is exact:
+
+1. The seed creates one structured `imageSpecs` record per challenge. Objective specs use a controlled photorealistic educational style; community specs use an editorial style. UK specs require left-hand traffic, UK markings and UK geometry.
+2. Select all missing imagery, selected challenges, a category, a difficulty, failed QA or unapproved work. A batch records provider, model, candidates, progress and errors.
+3. `imageGeneration.processNext` runs outside queries/mutations. It writes each candidate to Convex storage, records metadata and persists visual QA.
+4. QA never publishes. An operator reviews the actual RoadIQ 4:5 crop, visual facts, score and issues, then approves or rejects a candidate.
+5. Publishing verifies approval, creates a versioned `challengeAssets` record, deactivates the previous asset and makes the new asset active. Rollback selects a previous version without deleting history.
+
+The default provider is `mock`, which creates workflow-proof assets and QA warnings only. It is useful for local end-to-end testing but must not be treated as production imagery. Gemini is selected only by setting `ROADIQ_IMAGE_PROVIDER=gemini` and a server-side `GEMINI_API_KEY`; no Gemini request is made until an authorized operator queues a Gemini batch. The adapter uses the documented Gemini image interaction endpoint and persists its QA output for human review.
 
 ## Environment variables
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `NEXT_PUBLIC_APP_URL` | Recommended | Canonical links, sitemap, OG metadata and auth redirects |
-| `NEXT_PUBLIC_SUPABASE_URL` | Live mode | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Live mode | Public browser/server Supabase key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Seed script only | Inserts protected seed answer keys; never used by the app runtime |
+| `NEXT_PUBLIC_APP_URL` | Recommended | Canonical and metadata URLs |
+| `NEXT_PUBLIC_CONVEX_URL` | Convex mode | Convex deployment URL, written by the CLI |
+| `CONVEX_DEPLOYMENT` | Convex CLI | Local/deployment selection, written by the CLI |
+| `ROADIQ_BACKEND` | Convex mode | Set to `convex` only after seeding |
+| `ROADIQ_SEED_TOKEN` | Seed only | Guards `seed.importChallenges`; set in Convex and locally |
+| `ROADIQ_IMAGE_FACTORY_ENABLED` | Image Factory | Explicitly enables the internal route and privileged functions |
+| `ROADIQ_IMAGE_FACTORY_TOKEN` | Image Factory | Shared operator secret in Next.js and Convex; never public |
+| `ROADIQ_IMAGE_PROVIDER` | Image Factory | `mock` or `gemini`; defaults to `mock` |
+| `ROADIQ_IMAGE_MODEL` | Gemini batches | Image model name; default `gemini-3.1-flash-image` |
+| `ROADIQ_IMAGE_QA_MODEL` | Optional | Model used for structured visual QA; defaults to the batch model |
+| `GEMINI_API_KEY` | Gemini batches | Convex deployment secret only; never use a `NEXT_PUBLIC_*` name |
 
-## Deferred
+## Production migration checks
 
-RoadIQ does not include comments, user-created challenges, friends, social feeds, ads, billing, an admin UI, AI features or native wrappers. Privacy and Terms are marked product placeholders and require operator review before production account collection.
+1. Run `npx convex dev --once` or `npm run convex:deploy` against the intended deployment to generate API types and apply the schema.
+2. Set deployment secrets with the Convex CLI/dashboard: `ROADIQ_SEED_TOKEN`, and if needed the Image Factory token/provider/model/Gemini key.
+3. Seed once, then check that `challenges.listPublished` returns no correct-answer key before submission and `progress.submitResponse` returns one server-scored result for a repeated idempotency key.
+4. Enable `ROADIQ_BACKEND=convex` in the web environment and verify a normal player, a Daily completion and a published asset on a real deployment.
+5. Configure Convex Auth before exposing account linking. Keep billing integrations outside the gameplay functions and write entitlements into the existing neutral table.
+
+## PWA and privacy
+
+The PWA caches the offline shell and static assets, never answer/result API traffic. Mock mode stores progress under `roadiq:progress:v1`; Convex mode can import that state through the server-authoritative migration path. Privacy and Terms remain product placeholders and require reviewed production copy before collecting live account data.
