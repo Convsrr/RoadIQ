@@ -1,9 +1,11 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 export function ImageFactoryAccess() {
+  const router = useRouter();
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -15,11 +17,13 @@ export function ImageFactoryAccess() {
     try {
       const response = await fetch("/api/internal/image-factory/session", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ token }),
       });
       if (!response.ok) throw new Error("ACCESS_DENIED");
-      window.location.reload();
+      setToken("");
+      router.refresh();
     } catch {
       setError("Access token was not accepted.");
       setBusy(false);

@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { Check, ChevronRight, ImagePlus, LoaderCircle, RefreshCw, RotateCcw, SlidersHorizontal, Upload, X } from "lucide-react";
+import { Check, ChevronRight, ImagePlus, LoaderCircle, LogOut, RefreshCw, RotateCcw, SlidersHorizontal, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import type { ImageFactoryDashboard, ImageFactoryReviewItem } from "@/lib/image-factory/contracts";
@@ -33,6 +34,7 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 
 export function ImageReviewDashboard() {
+  const router = useRouter();
   const [dashboard, setDashboard] = useState<ImageFactoryDashboard | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -87,6 +89,22 @@ export function ImageReviewDashboard() {
     }
   }
 
+  async function signOut() {
+    setBusy("logout");
+    setMessage(null);
+    try {
+      const response = await fetch("/api/internal/image-factory/session", {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (!response.ok) throw new Error("LOGOUT_FAILED");
+      router.refresh();
+    } catch {
+      setMessage("Image Factory sign out could not be completed.");
+      setBusy(null);
+    }
+  }
+
   const batchCommand = useMemo(() => {
     if (batchMode === "category") return { command: "startBatch", filterMode: "category", category, provider, candidateCount: 3 };
     if (batchMode === "difficulty") return { command: "startBatch", filterMode: "difficulty", difficulty, provider, candidateCount: 3 };
@@ -105,7 +123,10 @@ export function ImageReviewDashboard() {
           <h1 className="mt-2 text-4xl font-semibold tracking-[-0.06em] sm:text-5xl">Image Factory</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Generate three candidates, inspect visual QA, then approve and publish one asset. Publishing updates Convex content without a Next.js redeploy.</p>
         </div>
-        <Button variant="outline" onClick={() => void load(cursor)} disabled={busy !== null}><RefreshCw className="size-4" aria-hidden="true" />Refresh</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => void load(cursor)} disabled={busy !== null}><RefreshCw className="size-4" aria-hidden="true" />Refresh</Button>
+          <Button variant="ghost" onClick={() => void signOut()} disabled={busy !== null}><LogOut className="size-4" aria-hidden="true" />Sign out</Button>
+        </div>
       </header>
 
       {dashboard && <>
