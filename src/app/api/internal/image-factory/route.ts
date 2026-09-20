@@ -64,7 +64,7 @@ function withoutCommand<T extends { command: string }>(input: T): Omit<T, "comma
 function safeCommandError(error: unknown): string {
   const message = error instanceof Error ? error.message.replace(/\s+/g, " ").trim() : "";
   const match = message.match(/\b(?:GEMINI|IMAGE|MOCK|NO_CHALLENGES|INVALID|CATEGORY|DIFFICULTY|CHALLENGE|CANDIDATE|QA|ASSET|BATCH)_[A-Z0-9_]+(?:: [^\n]{1,260})?/);
-  return match?.[0] ?? "Image Factory command could not be completed.";
+  return match?.[0] ?? "COMMAND_FAILED";
 }
 
 async function canUseImageFactory(): Promise<boolean> {

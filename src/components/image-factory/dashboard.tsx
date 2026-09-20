@@ -82,8 +82,10 @@ export function ImageReviewDashboard() {
       setMessage(success);
       await load(cursor);
     } catch (error) {
-      const detail = error instanceof Error && error.message !== "COMMAND_FAILED" ? ` ${error.message}` : "";
-      setMessage(`Image Factory command could not be completed.${detail}`);
+      const genericError = "Image Factory command could not be completed.";
+      const rawError = error instanceof Error ? error.message : "";
+      const detail = rawError && rawError !== "COMMAND_FAILED" && rawError !== genericError ? ` ${rawError}` : "";
+      setMessage(`${genericError}${detail}`);
     } finally {
       setBusy(null);
     }

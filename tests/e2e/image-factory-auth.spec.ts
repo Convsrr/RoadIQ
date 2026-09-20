@@ -27,11 +27,23 @@ test.skip(!operatorToken, "Set ROADIQ_IMAGE_FACTORY_TEST_TOKEN for the controlle
 test("operator login persists through page rendering and logout", async ({ page, context }) => {
   if (useDashboardFixture) {
     await page.route("**/api/internal/image-factory**", async (route) => {
+      if (new URL(route.request().url()).pathname.endsWith("/session")) {
+        await route.continue();
+        return;
+      }
       if (route.request().method() === "GET") {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
           body: JSON.stringify(dashboardFixture),
+        });
+        return;
+      }
+      if (route.request().method() === "POST") {
+        await route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Image Factory command could not be completed." }),
         });
         return;
       }
@@ -46,6 +58,11 @@ test("operator login persists through page rendering and logout", async ({ page,
   await page.getByRole("button", { name: "Open Image Factory" }).click();
   await expect(page.getByRole("button", { name: "Queue 3 candidates each" })).toBeVisible();
   await expect(page.getByLabel("Operator token")).toHaveCount(0);
+
+  if (useDashboardFixture) {
+    await page.getByRole("button", { name: "Queue 3 candidates each" }).click();
+    await expect(page.getByText("Image Factory command could not be completed.", { exact: true })).toHaveCount(1);
+  }
 
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByRole("button", { name: "Queue 3 candidates each" })).toBeVisible();
