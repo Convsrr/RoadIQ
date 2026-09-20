@@ -9,10 +9,11 @@ import type { ImageFactoryDashboard, ImageFactoryReviewItem } from "@/lib/image-
 import { cn } from "@/lib/utils";
 
 type BatchMode = "missing" | "failed_qa" | "unapproved" | "category" | "difficulty";
-type Provider = "mock" | "gemini" | "goi";
+type Provider = "mock" | "gemini";
 
 const categories = ["Driver IQ", "Parking IQ", "Road IQ", "Who's Wrong?", "Car IQ", "Spot It"];
 const difficulties = ["Easy", "Medium", "Hard", "Expert"];
+const showMockProvider = process.env.NODE_ENV !== "production";
 
 function statusLabel(value: string): string {
   return value.replaceAll("_", " ");
@@ -37,7 +38,7 @@ export function ImageReviewDashboard() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [batchMode, setBatchMode] = useState<BatchMode>("missing");
-  const [provider, setProvider] = useState<Provider>("goi");
+  const [provider, setProvider] = useState<Provider>("gemini");
   const [category, setCategory] = useState(categories[0]);
   const [difficulty, setDifficulty] = useState(difficulties[0]);
   const [editing, setEditing] = useState<ImageFactoryReviewItem | null>(null);
@@ -74,11 +75,13 @@ export function ImageReviewDashboard() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!response.ok) throw new Error("COMMAND_FAILED");
+      const result = await response.json().catch(() => null) as { error?: unknown } | null;
+      if (!response.ok) throw new Error(typeof result?.error === "string" ? result.error : "COMMAND_FAILED");
       setMessage(success);
       await load(cursor);
-    } catch {
-      setMessage("Image Factory command could not be completed. Check the selected workflow state and server configuration.");
+    } catch (error) {
+      const detail = error instanceof Error && error.message !== "COMMAND_FAILED" ? ` ${error.message}` : "";
+      setMessage(`Image Factory command could not be completed.${detail}`);
     } finally {
       setBusy(null);
     }
@@ -129,11 +132,11 @@ export function ImageReviewDashboard() {
               </select>
             </label>
             {batchMode === "category" ? <label className="grid gap-1.5 text-xs font-semibold">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="min-h-11 rounded-xl border border-border bg-background px-3 text-sm font-normal">{categories.map((value) => <option key={value}>{value}</option>)}</select></label> : batchMode === "difficulty" ? <label className="grid gap-1.5 text-xs font-semibold">Difficulty<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)} className="min-h-11 rounded-xl border border-border bg-background px-3 text-sm font-normal">{difficulties.map((value) => <option key={value}>{value}</option>)}</select></label> : <div className="hidden sm:block" />}
-            <label className="grid gap-1.5 text-xs font-semibold">Provider<select value={provider} onChange={(event) => setProvider(event.target.value as Provider)} className="min-h-11 rounded-xl border border-border bg-background px-3 text-sm font-normal"><option value="goi">GOI (production)</option><option value="mock">Mock workflow proof</option><option value="gemini">Gemini (legacy direct)</option></select></label>
+            <label className="grid gap-1.5 text-xs font-semibold">Provider<select value={provider} onChange={(event) => setProvider(event.target.value as Provider)} className="min-h-11 rounded-xl border border-border bg-background px-3 text-sm font-normal"><option value="gemini">Gemini (production)</option>{showMockProvider && <option value="mock">Mock workflow proof (local only)</option>}</select></label>
           </div>
           <div>
             <Button onClick={() => void command(batchCommand, "Batch queued. It will remain in review until a human approves a candidate.")} disabled={busy !== null}><ImagePlus className="size-4" aria-hidden="true" />Queue 3 candidates each</Button>
-            <p className="mt-2 text-[11px] text-muted-foreground">GOI and Gemini run server-side; mock output is a review-only fallback and is never auto-published.</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">Gemini runs server-side with structured visual QA. Mock output is available only in local development and is never auto-published.</p>
           </div>
         </div>
 

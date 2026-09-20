@@ -48,7 +48,7 @@ export type ImageFactoryQa = {
 export type ImageFactoryCandidate = {
   id: string;
   imageUrl: string;
-  provider: "mock" | "gemini" | "goi";
+  provider: "mock" | "gemini";
   model: string;
   promptVersion: number;
   candidateIndex: number;

@@ -39,7 +39,7 @@ const commandSchema = z.discriminatedUnion("command", [
     challengeStableIds: z.array(z.string().min(1).max(80)).max(500).optional(),
     category: z.enum(["Driver IQ", "Parking IQ", "Road IQ", "Who's Wrong?", "Car IQ", "Spot It"]).optional(),
     difficulty: z.enum(["Easy", "Medium", "Hard", "Expert"]).optional(),
-    provider: z.enum(["mock", "gemini", "goi"]).optional(),
+    provider: z.enum(["mock", "gemini"]).optional(),
     model: z.string().min(1).max(200).optional(),
     candidateCount: z.number().int().min(1).max(4).optional(),
   }).strict(),
@@ -59,6 +59,12 @@ function withoutCommand<T extends { command: string }>(input: T): Omit<T, "comma
   const { command, ...rest } = input;
   void command;
   return rest;
+}
+
+function safeCommandError(error: unknown): string {
+  const message = error instanceof Error ? error.message.replace(/\s+/g, " ").trim() : "";
+  const match = message.match(/\b(?:GEMINI|IMAGE|MOCK|NO_CHALLENGES|INVALID|CATEGORY|DIFFICULTY|CHALLENGE|CANDIDATE|QA|ASSET|BATCH)_[A-Z0-9_]+(?:: [^\n]{1,260})?/);
+  return match?.[0] ?? "Image Factory command could not be completed.";
 }
 
 async function canUseImageFactory(): Promise<boolean> {
@@ -136,7 +142,7 @@ export async function POST(request: Request) {
         return NextResponse.json(result);
       }
     }
-  } catch {
-    return NextResponse.json({ error: "Image Factory command could not be completed." }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ error: safeCommandError(error) }, { status: 400 });
   }
 }

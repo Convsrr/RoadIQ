@@ -3,9 +3,23 @@
 import { hash } from "./progression";
 import { parseImageQaJson, type ImageQaPayload } from "./imageQa";
 
-export type ImageProvider = "mock" | "gemini" | "goi";
+export type ImageProvider = "mock" | "gemini";
 
-const GOI_DEFAULT_BASE_URL = "https://api.g0i.ai/v1";
+const GEMINI_INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
+
+const IMAGE_QA_SCHEMA = {
+  type: "object",
+  properties: {
+    status: { type: "string", enum: ["pass", "warning", "fail"] },
+    score: { type: "number" },
+    issues: { type: "array", items: { type: "string" } },
+    confirmedFacts: { type: "array", items: { type: "string" } },
+    missingFacts: { type: "array", items: { type: "string" } },
+    contradictions: { type: "array", items: { type: "string" } },
+    summary: { type: "string" },
+  },
+  required: ["status", "score", "issues", "confirmedFacts", "missingFacts", "contradictions", "summary"],
+} as const;
 
 export type GeneratedImage = {
   bytes: Uint8Array;
@@ -53,29 +67,58 @@ function mockImage(input: ImageGenerationInput): GeneratedImage {
 
 function geminiApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("GEMINI_NOT_CONFIGURED");
+  if (!key?.trim()) throw new Error("GEMINI_NOT_CONFIGURED");
   return key;
 }
 
+function providerErrorDetail(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  const error = source.error && typeof source.error === "object" && !Array.isArray(source.error)
+    ? source.error as Record<string, unknown>
+    : source;
+  const parts = [error.status, error.code, error.message]
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .map((part) => part.trim());
+  if (parts.length === 0) return null;
+  return parts.join(" - ")
+    .replace(/(?:api[-_ ]?key|token|authorization)\s*[:=]\s*\S+/gi, "credential=[redacted]")
+    .slice(0, 240);
+}
+
 async function geminiResponse(payload: unknown): Promise<Record<string, unknown>> {
-  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-goog-api-key": geminiApiKey(),
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) throw new Error(`GEMINI_REQUEST_FAILED_${response.status}`);
-  const result: unknown = await response.json();
+  let response: Response;
+  try {
+    response = await fetch(GEMINI_INTERACTIONS_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": geminiApiKey(),
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new Error("GEMINI_NETWORK_ERROR");
+  }
+
+  const raw = await response.text();
+  let result: unknown = null;
+  try {
+    result = raw ? JSON.parse(raw) : null;
+  } catch {
+    result = null;
+  }
+  if (!response.ok) {
+    const detail = providerErrorDetail(result);
+    throw new Error(`GEMINI_REQUEST_FAILED_${response.status}${detail ? `: ${detail}` : ""}`);
+  }
   if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("GEMINI_RESPONSE_INVALID");
   return result as Record<string, unknown>;
 }
 
 function outputImage(result: Record<string, unknown>): { data: string; mimeType: string } {
-  const direct = result.output_image;
   const candidates = [
-    direct,
+    result.output_image,
     ...(Array.isArray(result.output) ? result.output : []),
     ...(Array.isArray(result.outputs) ? result.outputs : []),
   ];
@@ -103,80 +146,21 @@ function outputText(result: Record<string, unknown>): string | null {
     if (typeof value.text === "string") return value.text;
     if (typeof value.output_text === "string") return value.output_text;
   }
-  const choices = result.choices;
-  if (Array.isArray(choices)) {
-    for (const choice of choices) {
-      if (!choice || typeof choice !== "object" || Array.isArray(choice)) continue;
-      const message = (choice as Record<string, unknown>).message;
-      if (!message || typeof message !== "object" || Array.isArray(message)) continue;
-      const content = (message as Record<string, unknown>).content;
-      if (typeof content === "string") return content;
-      if (Array.isArray(content)) {
-        const text = content
-          .filter((part): part is Record<string, unknown> => Boolean(part) && typeof part === "object" && !Array.isArray(part))
-          .map((part) => typeof part.text === "string" ? part.text : "")
-          .filter(Boolean)
-          .join("\n");
-        if (text) return text;
-      }
+  const steps = result.steps;
+  if (Array.isArray(steps)) {
+    for (const step of steps) {
+      if (!step || typeof step !== "object" || Array.isArray(step)) continue;
+      const content = (step as Record<string, unknown>).content;
+      if (!Array.isArray(content)) continue;
+      const text = content
+        .filter((part): part is Record<string, unknown> => Boolean(part) && typeof part === "object" && !Array.isArray(part))
+        .map((part) => typeof part.text === "string" ? part.text : "")
+        .filter(Boolean)
+        .join("\n");
+      if (text) return text;
     }
   }
   return null;
-}
-
-async function geminiImage(input: ImageGenerationInput): Promise<GeneratedImage> {
-  const result = await geminiResponse({
-    model: input.model,
-    input: `${input.prompt}\n\nNegative requirements: ${input.negativePrompt}`,
-    response_format: {
-      type: "image",
-      mime_type: "image/jpeg",
-      aspect_ratio: "4:5",
-      image_size: "1K",
-    },
-  });
-  const image = outputImage(result);
-  return {
-    bytes: new Uint8Array(Buffer.from(image.data, "base64")),
-    mimeType: image.mimeType,
-    width: 1024,
-    height: 1280,
-  };
-}
-
-function goiApiKey(): string {
-  const key = process.env.GOI_API_KEY;
-  if (!key) throw new Error("GOI_NOT_CONFIGURED");
-  return key;
-}
-
-function goiBaseUrl(): string {
-  return (process.env.GOI_BASE_URL || GOI_DEFAULT_BASE_URL).replace(/\/+$/, "");
-}
-
-async function goiRequest(path: string, payload: unknown): Promise<Record<string, unknown>> {
-  const response = await fetch(`${goiBaseUrl()}/${path.replace(/^\/+/, "")}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${goiApiKey()}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) throw new Error(`GOI_REQUEST_FAILED_${response.status}`);
-  const result: unknown = await response.json().catch(() => null);
-  if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("GOI_RESPONSE_INVALID");
-  return result as Record<string, unknown>;
-}
-
-function mimeTypeFromDataUri(value: string): string | null {
-  const match = value.match(/^data:([^;,]+);base64,/i);
-  return match?.[1] ?? null;
-}
-
-function base64Payload(value: string): string {
-  const separator = value.indexOf(",");
-  return value.startsWith("data:") && separator >= 0 ? value.slice(separator + 1) : value;
 }
 
 function detectedMimeType(bytes: Uint8Array): string | null {
@@ -192,13 +176,11 @@ function dimensionsFromBytes(bytes: Uint8Array): { width: number; height: number
   if (buffer.length >= 24 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47 && buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a) {
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
   }
-  if (buffer.length >= 30 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") {
-    if (buffer.toString("ascii", 12, 16) === "VP8X" && buffer.length >= 30) {
-      return {
-        width: 1 + buffer.readUIntLE(24, 3),
-        height: 1 + buffer.readUIntLE(27, 3),
-      };
-    }
+  if (buffer.length >= 30 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP" && buffer.toString("ascii", 12, 16) === "VP8X") {
+    return {
+      width: 1 + buffer.readUIntLE(24, 3),
+      height: 1 + buffer.readUIntLE(27, 3),
+    };
   }
   if (buffer.length >= 4 && buffer[0] === 0xff && buffer[1] === 0xd8) {
     let offset = 2;
@@ -224,90 +206,46 @@ function dimensionsFromBytes(bytes: Uint8Array): { width: number; height: number
   return null;
 }
 
-function generatedImage(bytes: Uint8Array, mimeType: string): GeneratedImage {
+function generatedImage(bytes: Uint8Array, declaredMimeType: string): GeneratedImage {
+  if (bytes.byteLength === 0) throw new Error("GEMINI_IMAGE_EMPTY");
   const dimensions = dimensionsFromBytes(bytes);
+  if (!dimensions) throw new Error("GEMINI_IMAGE_DIMENSIONS_MISSING");
   return {
     bytes,
-    mimeType,
-    width: dimensions?.width ?? 1024,
-    height: dimensions?.height ?? 1280,
+    mimeType: declaredMimeType.startsWith("image/") ? declaredMimeType : detectedMimeType(bytes) ?? "image/jpeg",
+    width: dimensions.width,
+    height: dimensions.height,
   };
 }
 
-async function imageFromUrl(url: string, fallbackMimeType = "image/png"): Promise<GeneratedImage> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`GOI_IMAGE_FETCH_FAILED_${response.status}`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength === 0) throw new Error("GOI_IMAGE_MISSING");
-  const mimeType = response.headers.get("content-type")?.split(";", 1)[0] || detectedMimeType(bytes) || fallbackMimeType;
-  return generatedImage(bytes, mimeType);
+function decodeBase64(value: string): Uint8Array {
+  const bytes = new Uint8Array(Buffer.from(value, "base64"));
+  if (bytes.byteLength === 0) throw new Error("GEMINI_IMAGE_EMPTY");
+  return bytes;
 }
 
-function goiImageEntry(result: Record<string, unknown>): Record<string, unknown> | null {
-  const entries = Array.isArray(result.data) ? result.data : [];
-  const first = entries[0];
-  return first && typeof first === "object" && !Array.isArray(first) ? first as Record<string, unknown> : null;
-}
-
-async function goiImage(input: ImageGenerationInput): Promise<GeneratedImage> {
-  const result = await goiRequest("images/generations", {
+async function geminiImage(input: ImageGenerationInput): Promise<GeneratedImage> {
+  const result = await geminiResponse({
     model: input.model,
-    prompt: `${input.prompt}\n\nNegative requirements: ${input.negativePrompt}`,
-  });
-  const entry = goiImageEntry(result);
-  if (!entry) throw new Error("GOI_IMAGE_MISSING");
-  const encoded = typeof entry.b64_json === "string"
-    ? entry.b64_json
-    : typeof entry.data === "string" ? entry.data : null;
-  const declaredMimeType = typeof entry.mime_type === "string"
-    ? entry.mime_type
-    : typeof entry.mimeType === "string" ? entry.mimeType : null;
-  if (encoded) {
-    const bytes = new Uint8Array(Buffer.from(base64Payload(encoded), "base64"));
-    if (bytes.byteLength === 0) throw new Error("GOI_IMAGE_MISSING");
-    return generatedImage(bytes, declaredMimeType ?? mimeTypeFromDataUri(encoded) ?? detectedMimeType(bytes) ?? "image/png");
-  }
-  if (typeof entry.url === "string" && entry.url.length > 0) return imageFromUrl(entry.url, declaredMimeType ?? "image/png");
-  throw new Error("GOI_IMAGE_MISSING");
-}
-
-async function goiQa(input: ImageQaInput): Promise<ImageQaPayload> {
-  const imageData = Buffer.from(input.image.bytes).toString("base64");
-  const result = await goiRequest("chat/completions", {
-    model: input.model,
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages: [
+    input: [
       {
-        role: "system",
-        content: "You are a strict visual QA reviewer for RoadIQ driving challenges. Return one JSON object only. Do not infer facts that are not visibly supported by the image.",
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: [
-              "Evaluate this RoadIQ image for mobile-safe, decision-critical visual evidence.",
-              `Question: ${input.question}`,
-              `Critical facts that must be visible: ${input.criticalFacts.join(" | ")}`,
-              `Regional rules: ${input.regionRules.join(" | ")}`,
-              "Return exactly these keys: status (pass|warning|fail), score (0-100), issues (string[]), confirmedFacts (string[]), missingFacts (string[]), contradictions (string[]), summary (string).",
-              "Use fail for a contradiction, unreadable critical geometry, a watermark, readable number plates, generated text, or an American road layout in a UK scene. Use warning when the image is plausible but a human must resolve ambiguity.",
-            ].join("\n"),
-          },
-          { type: "image_url", image_url: { url: `data:${input.image.mimeType};base64,${imageData}` } },
-        ],
+        type: "text",
+        text: [
+          input.prompt,
+          `Negative requirements: ${input.negativePrompt}`,
+          `Generate candidate variation ${input.candidateIndex + 1} as a portrait RoadIQ card image.`,
+        ].join("\n\n"),
       },
     ],
+    response_format: {
+      type: "image",
+      mime_type: "image/jpeg",
+      aspect_ratio: "4:5",
+      image_size: "1K",
+    },
   });
-  return parseImageQaJson(outputText(result) ?? "", input.model);
-}
-
-export async function generateCandidateImage(input: ImageGenerationInput): Promise<GeneratedImage> {
-  if (input.provider === "mock") return mockImage(input);
-  if (input.provider === "goi") return goiImage(input);
-  return geminiImage(input);
+  const image = outputImage(result);
+  return generatedImage(decodeBase64(image.data), image.mimeType);
 }
 
 function mockQa(input: ImageQaInput): ImageQaPayload {
@@ -329,24 +267,32 @@ async function geminiQa(input: ImageQaInput): Promise<ImageQaPayload> {
     model: input.model,
     input: [
       {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: `Evaluate this RoadIQ driving-challenge image. Return JSON only with status (pass|warning|fail), score (0-100), issues, confirmedFacts, missingFacts, contradictions, and summary. Question: ${input.question}. Required facts: ${input.criticalFacts.join(" | ")}. Regional rules: ${input.regionRules.join(" | ")}. A fail is required for any contradiction, unreadable critical geometry, watermarks, readable plates, generated text, or an American road layout in a UK scene.`,
-          },
-          { type: "input_image", mime_type: input.image.mimeType, data },
-        ],
+        type: "text",
+        text: [
+          "Evaluate this RoadIQ driving-challenge image for mobile-safe, decision-critical visual evidence.",
+          `Question: ${input.question}`,
+          `Critical facts that must be visible: ${input.criticalFacts.join(" | ")}`,
+          `Regional rules: ${input.regionRules.join(" | ")}`,
+          "Use fail for a contradiction, unreadable critical geometry, a watermark, readable number plates, generated text, or an American road layout in a UK scene. Use warning when the image is plausible but a human must resolve ambiguity.",
+        ].join("\n"),
       },
+      { type: "image", mime_type: input.image.mimeType, data },
     ],
-    response_format: { type: "json_object" },
+    response_format: {
+      type: "text",
+      mime_type: "application/json",
+      schema: IMAGE_QA_SCHEMA,
+    },
   });
-  const text = outputText(result);
-  return parseImageQaJson(text ?? "", input.model);
+  return parseImageQaJson(outputText(result) ?? "", input.model);
+}
+
+export async function generateCandidateImage(input: ImageGenerationInput): Promise<GeneratedImage> {
+  if (input.provider === "mock") return mockImage(input);
+  return geminiImage(input);
 }
 
 export async function evaluateCandidateImage(input: ImageQaInput): Promise<ImageQaPayload> {
   if (input.provider === "mock") return mockQa(input);
-  if (input.provider === "goi") return goiQa(input);
   return geminiQa(input);
 }

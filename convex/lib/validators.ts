@@ -21,7 +21,7 @@ export const challengeTypeValidator = v.union(
   v.literal("community"),
 );
 
-export const providerValidator = v.union(v.literal("mock"), v.literal("gemini"), v.literal("goi"));
+export const providerValidator = v.union(v.literal("mock"), v.literal("gemini"));
 
 export const answerPercentageValidator = v.object({
   answerId: v.string(),

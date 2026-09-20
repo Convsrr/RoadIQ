@@ -118,17 +118,21 @@ function requireOperator(operatorToken: string): void {
   }
 }
 
-type ConfiguredImageProvider = "mock" | "gemini" | "goi";
+type ConfiguredImageProvider = "mock" | "gemini";
 
 function configuredProvider(): ConfiguredImageProvider {
   const provider = process.env.ROADIQ_IMAGE_PROVIDER;
-  return provider === "mock" || provider === "gemini" || provider === "goi" ? provider : "goi";
+  if (provider === "mock" || provider === "gemini") return provider;
+  if (provider === "goi") throw new Error("GOI_PROVIDER_DISABLED");
+  throw new Error("IMAGE_PROVIDER_NOT_CONFIGURED");
 }
 
 function modelFor(provider: ConfiguredImageProvider, requested?: string): string {
   if (requested) return requested;
   if (provider === "mock") return "mock-road-iq-v1";
-  return process.env.ROADIQ_IMAGE_MODEL || (provider === "goi" ? "gpt-image-2" : "gemini-3.1-flash-image");
+  const model = process.env.ROADIQ_IMAGE_MODEL;
+  if (!model) throw new Error("GEMINI_IMAGE_MODEL_NOT_CONFIGURED");
+  return model;
 }
 
 async function imageUrl(ctx: QueryCtx, asset: { storageId?: Id<"_storage">; externalUrl?: string } | null): Promise<string> {
@@ -283,8 +287,8 @@ export const startBatch = mutation({
   handler: async (ctx, args) => {
     requireOperator(args.operatorToken);
     const provider = args.provider ?? configuredProvider();
+    if (provider === "mock" && process.env.ROADIQ_IMAGE_PROVIDER !== "mock") throw new Error("MOCK_PROVIDER_NOT_CONFIGURED");
     if (provider === "gemini" && !process.env.GEMINI_API_KEY) throw new Error("GEMINI_NOT_CONFIGURED");
-    if (provider === "goi" && !process.env.GOI_API_KEY) throw new Error("GOI_NOT_CONFIGURED");
     const candidateCount = args.candidateCount ?? 3;
     if (!Number.isInteger(candidateCount) || candidateCount < 1 || candidateCount > 4) throw new Error("INVALID_CANDIDATE_COUNT");
     const targets: Doc<"challenges">[] = [];
@@ -325,10 +329,11 @@ export const startBatch = mutation({
     }
     const challengeIds = targets.slice(0, 5_000).map((challenge) => challenge._id);
     if (challengeIds.length === 0) throw new Error("NO_CHALLENGES_MATCHED");
+    const model = modelFor(provider, args.model);
     const now = Date.now();
     const batchId = await ctx.db.insert("imageGenerationBatches", {
       provider,
-      model: modelFor(provider, args.model),
+      model,
       candidateCount,
       filterMode: args.filterMode,
       challengeIds,
@@ -343,7 +348,7 @@ export const startBatch = mutation({
       updatedAt: now,
     });
     await ctx.scheduler.runAfter(0, internal.imageGeneration.processNext, { batchId });
-    return { batchId, challengeCount: challengeIds.length, provider, model: modelFor(provider, args.model) };
+    return { batchId, challengeCount: challengeIds.length, provider, model };
   },
 });
 

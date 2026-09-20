@@ -6,12 +6,18 @@ import { internalAction } from "./_generated/server";
 import { evaluateCandidateImage, generateCandidateImage } from "./lib/imageProvider";
 
 function safeBatchError(error: unknown): string {
-  if (error instanceof Error && /^(?:GEMINI|GOI)_[A-Z0-9_]+$/.test(error.message)) return error.message;
+  if (error instanceof Error) {
+    const message = error.message.replace(/\s+/g, " ").trim();
+    if (/^GEMINI_[A-Z0-9_]+(?:: .{1,260})?$/.test(message)) return message.slice(0, 300);
+  }
   return "IMAGE_GENERATION_FAILED";
 }
 
-function qaModelFor(provider: "mock" | "gemini" | "goi", generationModel: string): string {
-  return process.env.ROADIQ_IMAGE_QA_MODEL || (provider === "goi" ? "gemini-3.1-pro" : generationModel);
+function qaModelFor(provider: "mock" | "gemini"): string {
+  if (provider === "mock") return "mock-qa-v1";
+  const model = process.env.ROADIQ_IMAGE_QA_MODEL;
+  if (!model) throw new Error("GEMINI_QA_MODEL_NOT_CONFIGURED");
+  return model;
 }
 
 export const processNext = internalAction({
@@ -55,7 +61,7 @@ export const processNext = internalAction({
         });
         const qa = await evaluateCandidateImage({
           provider: input.provider,
-          model: qaModelFor(input.provider, input.model),
+          model: qaModelFor(input.provider),
           question: input.question,
           criticalFacts: input.criticalFacts,
           regionRules: input.regionRules,
