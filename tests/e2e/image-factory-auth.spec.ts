@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const operatorToken = process.env.ROADIQ_IMAGE_FACTORY_TEST_TOKEN;
+const useDashboardFixture = process.env.ROADIQ_IMAGE_FACTORY_TEST_MODE === "fixture";
 
 const dashboardFixture = {
   metrics: {
@@ -24,17 +25,19 @@ const dashboardFixture = {
 test.skip(!operatorToken, "Set ROADIQ_IMAGE_FACTORY_TEST_TOKEN for the controlled Image Factory auth test.");
 
 test("operator login persists through page rendering and logout", async ({ page, context }) => {
-  await page.route("**/api/internal/image-factory**", async (route) => {
-    if (route.request().method() === "GET") {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(dashboardFixture),
-      });
-      return;
-    }
-    await route.continue();
-  });
+  if (useDashboardFixture) {
+    await page.route("**/api/internal/image-factory**", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(dashboardFixture),
+        });
+        return;
+      }
+      await route.continue();
+    });
+  }
 
   await page.goto("/image-review", { waitUntil: "networkidle" });
   await expect(page.getByLabel("Operator token")).toBeVisible();
