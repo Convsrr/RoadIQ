@@ -9,7 +9,7 @@ import type { ImageFactoryDashboard, ImageFactoryReviewItem } from "@/lib/image-
 import { cn } from "@/lib/utils";
 
 type BatchMode = "missing" | "failed_qa" | "unapproved" | "category" | "difficulty";
-type Provider = "mock" | "gemini";
+type Provider = "mock" | "gemini" | "goi";
 
 const categories = ["Driver IQ", "Parking IQ", "Road IQ", "Who's Wrong?", "Car IQ", "Spot It"];
 const difficulties = ["Easy", "Medium", "Hard", "Expert"];
@@ -37,7 +37,7 @@ export function ImageReviewDashboard() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [batchMode, setBatchMode] = useState<BatchMode>("missing");
-  const [provider, setProvider] = useState<Provider>("mock");
+  const [provider, setProvider] = useState<Provider>("goi");
   const [category, setCategory] = useState(categories[0]);
   const [difficulty, setDifficulty] = useState(difficulties[0]);
   const [editing, setEditing] = useState<ImageFactoryReviewItem | null>(null);
@@ -129,18 +129,18 @@ export function ImageReviewDashboard() {
               </select>
             </label>
             {batchMode === "category" ? <label className="grid gap-1.5 text-xs font-semibold">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="min-h-11 rounded-xl border border-border bg-background px-3 text-sm font-normal">{categories.map((value) => <option key={value}>{value}</option>)}</select></label> : batchMode === "difficulty" ? <label className="grid gap-1.5 text-xs font-semibold">Difficulty<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)} className="min-h-11 rounded-xl border border-border bg-background px-3 text-sm font-normal">{difficulties.map((value) => <option key={value}>{value}</option>)}</select></label> : <div className="hidden sm:block" />}
-            <label className="grid gap-1.5 text-xs font-semibold">Provider<select value={provider} onChange={(event) => setProvider(event.target.value as Provider)} className="min-h-11 rounded-xl border border-border bg-background px-3 text-sm font-normal"><option value="mock">Mock workflow proof</option><option value="gemini">Gemini (credentialed)</option></select></label>
+            <label className="grid gap-1.5 text-xs font-semibold">Provider<select value={provider} onChange={(event) => setProvider(event.target.value as Provider)} className="min-h-11 rounded-xl border border-border bg-background px-3 text-sm font-normal"><option value="goi">GOI (production)</option><option value="mock">Mock workflow proof</option><option value="gemini">Gemini (legacy direct)</option></select></label>
           </div>
           <div>
             <Button onClick={() => void command(batchCommand, "Batch queued. It will remain in review until a human approves a candidate.")} disabled={busy !== null}><ImagePlus className="size-4" aria-hidden="true" />Queue 3 candidates each</Button>
-            <p className="mt-2 text-[11px] text-muted-foreground">Gemini starts only when its server credential exists; mock output is never auto-published.</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">GOI and Gemini run server-side; mock output is a review-only fallback and is never auto-published.</p>
           </div>
         </div>
 
         {message && <p aria-live="polite" className="mt-4 rounded-xl border border-border bg-secondary px-4 py-3 text-sm text-muted-foreground">{message}</p>}
 
         <div className="mt-7 grid gap-5 xl:grid-cols-2">
-          {dashboard.page.map((item) => <ReviewCard key={item.id} item={item} busy={busy !== null} onCommand={command} onEdit={setEditing} />)}
+          {dashboard.page.map((item) => <ReviewCard key={item.id} item={item} provider={provider} busy={busy !== null} onCommand={command} onEdit={setEditing} />)}
         </div>
         {dashboard.page.length === 0 && <div className="mt-8 rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Seed challenges into Convex to begin the Image Factory workflow.</div>}
         {!dashboard.isDone && <div className="mt-8 flex justify-center"><Button variant="outline" onClick={() => void load(dashboard.continueCursor)} disabled={busy !== null}>Load more <ChevronRight className="size-4" aria-hidden="true" /></Button></div>}
@@ -151,8 +151,9 @@ export function ImageReviewDashboard() {
   );
 }
 
-function ReviewCard({ item, busy, onCommand, onEdit }: {
+function ReviewCard({ item, provider, busy, onCommand, onEdit }: {
   item: ImageFactoryReviewItem;
+  provider: Provider;
   busy: boolean;
   onCommand: (body: Record<string, unknown>, success: string) => Promise<void>;
   onEdit: (item: ImageFactoryReviewItem) => void;
@@ -168,7 +169,7 @@ function ReviewCard({ item, busy, onCommand, onEdit }: {
         <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Live card crop</p>
         <div className="relative mt-2 aspect-[4/5] overflow-hidden rounded-2xl bg-secondary"><FactoryImage src={item.currentImage?.imageUrl ?? ""} alt={item.currentImage?.imageAlt ?? item.imageAlt} position={item.currentImage?.imagePosition ?? item.imagePosition} /></div>
         <p className="mt-2 text-xs text-muted-foreground">{item.category} · {item.difficulty} · {item.challengeType}</p>
-        <div className="mt-4 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => onEdit(item)} disabled={busy}><SlidersHorizontal className="size-3.5" aria-hidden="true" />Edit spec</Button><Button size="sm" variant="outline" onClick={() => void onCommand({ command: "startBatch", filterMode: "selected", challengeStableIds: [item.id], provider: "mock", candidateCount: 3 }, "Regeneration batch queued with the mock provider.")} disabled={busy}><RefreshCw className="size-3.5" aria-hidden="true" />Regenerate</Button></div>
+        <div className="mt-4 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => onEdit(item)} disabled={busy}><SlidersHorizontal className="size-3.5" aria-hidden="true" />Edit spec</Button><Button size="sm" variant="outline" onClick={() => void onCommand({ command: "startBatch", filterMode: "selected", challengeStableIds: [item.id], provider, candidateCount: 3 }, `Regeneration batch queued with the ${provider} provider.`)} disabled={busy}><RefreshCw className="size-3.5" aria-hidden="true" />Regenerate</Button></div>
       </div>
       <div className="min-w-0">
         <div className="rounded-xl border border-border bg-background p-3 text-sm"><p className="font-semibold">Answer choices</p><ul className="mt-2 space-y-1 text-muted-foreground">{item.answers.map((answer) => <li key={answer.id} className={answer.id === item.correctAnswerId ? "font-semibold text-success" : ""}>{answer.text}{answer.id === item.correctAnswerId ? " · correct" : ""}</li>)}</ul>{!correct && <p className="mt-2 text-xs text-muted-foreground">Community question: no answer key.</p>}</div>

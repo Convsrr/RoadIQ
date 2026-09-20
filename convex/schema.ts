@@ -47,7 +47,7 @@ const entitlementStatusValidator = v.union(
   v.literal("expired"),
   v.literal("cancelled"),
 );
-const providerValidator = v.union(v.literal("mock"), v.literal("gemini"));
+const providerValidator = v.union(v.literal("mock"), v.literal("gemini"), v.literal("goi"));
 const qaStatusValidator = v.union(
   v.literal("pending"),
   v.literal("pass"),

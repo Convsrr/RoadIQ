@@ -76,7 +76,7 @@ The workflow is exact:
 4. QA never publishes. An operator reviews the actual RoadIQ 4:5 crop, visual facts, score and issues, then approves or rejects a candidate.
 5. Publishing verifies approval, creates a versioned `challengeAssets` record, deactivates the previous asset and makes the new asset active. Rollback selects a previous version without deleting history.
 
-The default provider is `mock`, which creates workflow-proof assets and QA warnings only. It is useful for local end-to-end testing but must not be treated as production imagery. Gemini is selected only by setting `ROADIQ_IMAGE_PROVIDER=gemini` and a server-side `GEMINI_API_KEY`; no Gemini request is made until an authorized operator queues a Gemini batch. The adapter uses the documented Gemini image interaction endpoint and persists its QA output for human review.
+The production default is `goi`, using the OpenAI-compatible G0I gateway for image generation and vision QA. Set `GOI_API_KEY` only in Convex/Vercel server environments; Convex node actions send the request and store the returned bytes in Convex storage. `ROADIQ_IMAGE_MODEL` defaults to the documented `gpt-image-2` image model, while `ROADIQ_IMAGE_QA_MODEL` defaults to `gemini-3.1-pro`. G0I model access is account- and plan-dependent; verify the selected image model is available for the production key before starting a batch. Set `ROADIQ_IMAGE_PROVIDER=mock` for local workflow proof; mock output always receives a QA warning and must not be treated as production imagery. The existing direct Gemini path remains available with `ROADIQ_IMAGE_PROVIDER=gemini` and a server-side `GEMINI_API_KEY`.
 
 ## Environment variables
 
@@ -89,15 +89,17 @@ The default provider is `mock`, which creates workflow-proof assets and QA warni
 | `ROADIQ_SEED_TOKEN` | Seed only | Guards `seed.importChallenges`; set in Convex and locally |
 | `ROADIQ_IMAGE_FACTORY_ENABLED` | Image Factory | Explicitly enables the internal route and privileged functions |
 | `ROADIQ_IMAGE_FACTORY_TOKEN` | Image Factory | Shared operator secret in Next.js and Convex; never public |
-| `ROADIQ_IMAGE_PROVIDER` | Image Factory | `mock` or `gemini`; defaults to `mock` |
-| `ROADIQ_IMAGE_MODEL` | Gemini batches | Image model name; default `gemini-3.1-flash-image` |
-| `ROADIQ_IMAGE_QA_MODEL` | Optional | Model used for structured visual QA; defaults to the batch model |
+| `ROADIQ_IMAGE_PROVIDER` | Image Factory | `goi`, `mock`, or `gemini`; production default `goi` |
+| `ROADIQ_IMAGE_MODEL` | Image batches | Provider image model; GOI default `gpt-image-2` |
+| `ROADIQ_IMAGE_QA_MODEL` | Image batches | Provider vision model; GOI default `gemini-3.1-pro` |
+| `GOI_BASE_URL` | GOI batches | Server-only OpenAI-compatible base URL; default `https://api.g0i.ai/v1` |
+| `GOI_API_KEY` | GOI batches | Convex node-action secret; never use a `NEXT_PUBLIC_*` name |
 | `GEMINI_API_KEY` | Gemini batches | Convex deployment secret only; never use a `NEXT_PUBLIC_*` name |
 
 ## Production migration checks
 
 1. Run `npx convex dev --once` or `npm run convex:deploy` against the intended deployment to generate API types and apply the schema.
-2. Set deployment secrets with the Convex CLI/dashboard: `ROADIQ_SEED_TOKEN`, and if needed the Image Factory token/provider/model/Gemini key.
+2. Set deployment secrets with the Convex CLI/dashboard: `ROADIQ_SEED_TOKEN`, the same `ROADIQ_IMAGE_FACTORY_TOKEN` used by Vercel, `ROADIQ_IMAGE_PROVIDER=goi`, `ROADIQ_IMAGE_MODEL`, `ROADIQ_IMAGE_QA_MODEL`, `GOI_BASE_URL`, and `GOI_API_KEY`.
 3. Seed once, then check that `challenges.listPublished` returns no correct-answer key before submission and `progress.submitResponse` returns one server-scored result for a repeated idempotency key.
 4. Enable `ROADIQ_BACKEND=convex` in the web environment and verify a normal player, a Daily completion and a published asset on a real deployment.
 5. Configure Convex Auth before exposing account linking. Keep billing integrations outside the gameplay functions and write entitlements into the existing neutral table.

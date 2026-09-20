@@ -118,15 +118,17 @@ function requireOperator(operatorToken: string): void {
   }
 }
 
-function configuredProvider(): "mock" | "gemini" {
-  return process.env.ROADIQ_IMAGE_PROVIDER === "gemini" ? "gemini" : "mock";
+type ConfiguredImageProvider = "mock" | "gemini" | "goi";
+
+function configuredProvider(): ConfiguredImageProvider {
+  const provider = process.env.ROADIQ_IMAGE_PROVIDER;
+  return provider === "mock" || provider === "gemini" || provider === "goi" ? provider : "goi";
 }
 
-function modelFor(provider: "mock" | "gemini", requested?: string): string {
+function modelFor(provider: ConfiguredImageProvider, requested?: string): string {
   if (requested) return requested;
-  return provider === "gemini"
-    ? process.env.ROADIQ_IMAGE_MODEL ?? "gemini-3.1-flash-image"
-    : "mock-road-iq-v1";
+  if (provider === "mock") return "mock-road-iq-v1";
+  return process.env.ROADIQ_IMAGE_MODEL || (provider === "goi" ? "gpt-image-2" : "gemini-3.1-flash-image");
 }
 
 async function imageUrl(ctx: QueryCtx, asset: { storageId?: Id<"_storage">; externalUrl?: string } | null): Promise<string> {
@@ -282,6 +284,7 @@ export const startBatch = mutation({
     requireOperator(args.operatorToken);
     const provider = args.provider ?? configuredProvider();
     if (provider === "gemini" && !process.env.GEMINI_API_KEY) throw new Error("GEMINI_NOT_CONFIGURED");
+    if (provider === "goi" && !process.env.GOI_API_KEY) throw new Error("GOI_NOT_CONFIGURED");
     const candidateCount = args.candidateCount ?? 3;
     if (!Number.isInteger(candidateCount) || candidateCount < 1 || candidateCount > 4) throw new Error("INVALID_CANDIDATE_COUNT");
     const targets: Doc<"challenges">[] = [];

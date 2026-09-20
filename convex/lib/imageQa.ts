@@ -11,14 +11,17 @@ export type ImageQaPayload = {
 
 function stringList(value: unknown): string[] {
   return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string").map((item) => item.slice(0, 500)).slice(0, 30)
+    ? value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim().slice(0, 500))
+        .filter(Boolean)
+        .slice(0, 30)
     : [];
 }
 
 function score(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.min(100, Math.max(0, Math.round(value)))
-    : 0;
+  const numeric = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? Math.min(100, Math.max(0, Math.round(numeric))) : 0;
 }
 
 export function parseImageQaPayload(value: unknown, model: string): ImageQaPayload {
@@ -38,9 +41,14 @@ export function parseImageQaPayload(value: unknown, model: string): ImageQaPaylo
   const missingFacts = stringList(source.missingFacts);
   const contradictions = stringList(source.contradictions);
   const requestedStatus = source.status;
-  const status = requestedStatus === "pass" || requestedStatus === "warning" || requestedStatus === "fail"
+  const parsedStatus = requestedStatus === "pass" || requestedStatus === "warning" || requestedStatus === "fail"
     ? requestedStatus
     : missingFacts.length > 0 || contradictions.length > 0 ? "warning" : "warning";
+  const status = contradictions.length > 0
+    ? "fail"
+    : missingFacts.length > 0 && parsedStatus === "pass"
+      ? "warning"
+      : parsedStatus;
   return {
     status,
     score: score(source.score),
@@ -54,8 +62,21 @@ export function parseImageQaPayload(value: unknown, model: string): ImageQaPaylo
 }
 
 export function parseImageQaJson(value: string, model: string): ImageQaPayload {
+  const trimmed = value.trim();
+  const withoutFence = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const candidates = [withoutFence];
+  const objectStart = withoutFence.indexOf("{");
+  const objectEnd = withoutFence.lastIndexOf("}");
+  if (objectStart >= 0 && objectEnd > objectStart) candidates.push(withoutFence.slice(objectStart, objectEnd + 1));
   try {
-    return parseImageQaPayload(JSON.parse(value), model);
+    for (const candidate of candidates) {
+      try {
+        return parseImageQaPayload(JSON.parse(candidate), model);
+      } catch {
+        // Try the next common provider response wrapper before falling back to a warning.
+      }
+    }
+    return parseImageQaPayload(null, model);
   } catch {
     return parseImageQaPayload(null, model);
   }

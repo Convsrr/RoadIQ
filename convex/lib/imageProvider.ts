@@ -3,7 +3,9 @@
 import { hash } from "./progression";
 import { parseImageQaJson, type ImageQaPayload } from "./imageQa";
 
-export type ImageProvider = "mock" | "gemini";
+export type ImageProvider = "mock" | "gemini" | "goi";
+
+const GOI_DEFAULT_BASE_URL = "https://api.g0i.ai/v1";
 
 export type GeneratedImage = {
   bytes: Uint8Array;
@@ -49,7 +51,7 @@ function mockImage(input: ImageGenerationInput): GeneratedImage {
   };
 }
 
-function apiKey(): string {
+function geminiApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_NOT_CONFIGURED");
   return key;
@@ -60,7 +62,7 @@ async function geminiResponse(payload: unknown): Promise<Record<string, unknown>
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-goog-api-key": apiKey(),
+      "x-goog-api-key": geminiApiKey(),
     },
     body: JSON.stringify(payload),
   });
@@ -101,6 +103,24 @@ function outputText(result: Record<string, unknown>): string | null {
     if (typeof value.text === "string") return value.text;
     if (typeof value.output_text === "string") return value.output_text;
   }
+  const choices = result.choices;
+  if (Array.isArray(choices)) {
+    for (const choice of choices) {
+      if (!choice || typeof choice !== "object" || Array.isArray(choice)) continue;
+      const message = (choice as Record<string, unknown>).message;
+      if (!message || typeof message !== "object" || Array.isArray(message)) continue;
+      const content = (message as Record<string, unknown>).content;
+      if (typeof content === "string") return content;
+      if (Array.isArray(content)) {
+        const text = content
+          .filter((part): part is Record<string, unknown> => Boolean(part) && typeof part === "object" && !Array.isArray(part))
+          .map((part) => typeof part.text === "string" ? part.text : "")
+          .filter(Boolean)
+          .join("\n");
+        if (text) return text;
+      }
+    }
+  }
   return null;
 }
 
@@ -124,8 +144,170 @@ async function geminiImage(input: ImageGenerationInput): Promise<GeneratedImage>
   };
 }
 
+function goiApiKey(): string {
+  const key = process.env.GOI_API_KEY;
+  if (!key) throw new Error("GOI_NOT_CONFIGURED");
+  return key;
+}
+
+function goiBaseUrl(): string {
+  return (process.env.GOI_BASE_URL || GOI_DEFAULT_BASE_URL).replace(/\/+$/, "");
+}
+
+async function goiRequest(path: string, payload: unknown): Promise<Record<string, unknown>> {
+  const response = await fetch(`${goiBaseUrl()}/${path.replace(/^\/+/, "")}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${goiApiKey()}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`GOI_REQUEST_FAILED_${response.status}`);
+  const result: unknown = await response.json().catch(() => null);
+  if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("GOI_RESPONSE_INVALID");
+  return result as Record<string, unknown>;
+}
+
+function mimeTypeFromDataUri(value: string): string | null {
+  const match = value.match(/^data:([^;,]+);base64,/i);
+  return match?.[1] ?? null;
+}
+
+function base64Payload(value: string): string {
+  const separator = value.indexOf(",");
+  return value.startsWith("data:") && separator >= 0 ? value.slice(separator + 1) : value;
+}
+
+function detectedMimeType(bytes: Uint8Array): string | null {
+  const buffer = Buffer.from(bytes);
+  if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47 && buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a) return "image/png";
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
+  if (buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  return null;
+}
+
+function dimensionsFromBytes(bytes: Uint8Array): { width: number; height: number } | null {
+  const buffer = Buffer.from(bytes);
+  if (buffer.length >= 24 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47 && buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a) {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  }
+  if (buffer.length >= 30 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") {
+    if (buffer.toString("ascii", 12, 16) === "VP8X" && buffer.length >= 30) {
+      return {
+        width: 1 + buffer.readUIntLE(24, 3),
+        height: 1 + buffer.readUIntLE(27, 3),
+      };
+    }
+  }
+  if (buffer.length >= 4 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset + 9 < buffer.length) {
+      if (buffer[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      offset += 2;
+      if (marker === 0xd8 || marker === 0xd9) continue;
+      if (offset + 2 > buffer.length) break;
+      const segmentLength = buffer.readUInt16BE(offset);
+      if (segmentLength < 2 || offset + segmentLength > buffer.length) break;
+      const isSizeMarker = (marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) ||
+        (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf);
+      if (isSizeMarker && offset + 7 <= buffer.length) {
+        return { width: buffer.readUInt16BE(offset + 5), height: buffer.readUInt16BE(offset + 3) };
+      }
+      offset += segmentLength;
+    }
+  }
+  return null;
+}
+
+function generatedImage(bytes: Uint8Array, mimeType: string): GeneratedImage {
+  const dimensions = dimensionsFromBytes(bytes);
+  return {
+    bytes,
+    mimeType,
+    width: dimensions?.width ?? 1024,
+    height: dimensions?.height ?? 1280,
+  };
+}
+
+async function imageFromUrl(url: string, fallbackMimeType = "image/png"): Promise<GeneratedImage> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`GOI_IMAGE_FETCH_FAILED_${response.status}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength === 0) throw new Error("GOI_IMAGE_MISSING");
+  const mimeType = response.headers.get("content-type")?.split(";", 1)[0] || detectedMimeType(bytes) || fallbackMimeType;
+  return generatedImage(bytes, mimeType);
+}
+
+function goiImageEntry(result: Record<string, unknown>): Record<string, unknown> | null {
+  const entries = Array.isArray(result.data) ? result.data : [];
+  const first = entries[0];
+  return first && typeof first === "object" && !Array.isArray(first) ? first as Record<string, unknown> : null;
+}
+
+async function goiImage(input: ImageGenerationInput): Promise<GeneratedImage> {
+  const result = await goiRequest("images/generations", {
+    model: input.model,
+    prompt: `${input.prompt}\n\nNegative requirements: ${input.negativePrompt}`,
+  });
+  const entry = goiImageEntry(result);
+  if (!entry) throw new Error("GOI_IMAGE_MISSING");
+  const encoded = typeof entry.b64_json === "string"
+    ? entry.b64_json
+    : typeof entry.data === "string" ? entry.data : null;
+  const declaredMimeType = typeof entry.mime_type === "string"
+    ? entry.mime_type
+    : typeof entry.mimeType === "string" ? entry.mimeType : null;
+  if (encoded) {
+    const bytes = new Uint8Array(Buffer.from(base64Payload(encoded), "base64"));
+    if (bytes.byteLength === 0) throw new Error("GOI_IMAGE_MISSING");
+    return generatedImage(bytes, declaredMimeType ?? mimeTypeFromDataUri(encoded) ?? detectedMimeType(bytes) ?? "image/png");
+  }
+  if (typeof entry.url === "string" && entry.url.length > 0) return imageFromUrl(entry.url, declaredMimeType ?? "image/png");
+  throw new Error("GOI_IMAGE_MISSING");
+}
+
+async function goiQa(input: ImageQaInput): Promise<ImageQaPayload> {
+  const imageData = Buffer.from(input.image.bytes).toString("base64");
+  const result = await goiRequest("chat/completions", {
+    model: input.model,
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: "You are a strict visual QA reviewer for RoadIQ driving challenges. Return one JSON object only. Do not infer facts that are not visibly supported by the image.",
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: [
+              "Evaluate this RoadIQ image for mobile-safe, decision-critical visual evidence.",
+              `Question: ${input.question}`,
+              `Critical facts that must be visible: ${input.criticalFacts.join(" | ")}`,
+              `Regional rules: ${input.regionRules.join(" | ")}`,
+              "Return exactly these keys: status (pass|warning|fail), score (0-100), issues (string[]), confirmedFacts (string[]), missingFacts (string[]), contradictions (string[]), summary (string).",
+              "Use fail for a contradiction, unreadable critical geometry, a watermark, readable number plates, generated text, or an American road layout in a UK scene. Use warning when the image is plausible but a human must resolve ambiguity.",
+            ].join("\n"),
+          },
+          { type: "image_url", image_url: { url: `data:${input.image.mimeType};base64,${imageData}` } },
+        ],
+      },
+    ],
+  });
+  return parseImageQaJson(outputText(result) ?? "", input.model);
+}
+
 export async function generateCandidateImage(input: ImageGenerationInput): Promise<GeneratedImage> {
-  return input.provider === "mock" ? mockImage(input) : await geminiImage(input);
+  if (input.provider === "mock") return mockImage(input);
+  if (input.provider === "goi") return goiImage(input);
+  return geminiImage(input);
 }
 
 function mockQa(input: ImageQaInput): ImageQaPayload {
@@ -164,5 +346,7 @@ async function geminiQa(input: ImageQaInput): Promise<ImageQaPayload> {
 }
 
 export async function evaluateCandidateImage(input: ImageQaInput): Promise<ImageQaPayload> {
-  return input.provider === "mock" ? mockQa(input) : await geminiQa(input);
+  if (input.provider === "mock") return mockQa(input);
+  if (input.provider === "goi") return goiQa(input);
+  return geminiQa(input);
 }

@@ -39,7 +39,7 @@ const commandSchema = z.discriminatedUnion("command", [
     challengeStableIds: z.array(z.string().min(1).max(80)).max(500).optional(),
     category: z.enum(["Driver IQ", "Parking IQ", "Road IQ", "Who's Wrong?", "Car IQ", "Spot It"]).optional(),
     difficulty: z.enum(["Easy", "Medium", "Hard", "Expert"]).optional(),
-    provider: z.enum(["mock", "gemini"]).optional(),
+    provider: z.enum(["mock", "gemini", "goi"]).optional(),
     model: z.string().min(1).max(200).optional(),
     candidateCount: z.number().int().min(1).max(4).optional(),
   }).strict(),

@@ -20,6 +20,24 @@ export async function toPublicChallenge(
     ? await ctx.storage.getUrl(activeAsset.storageId)
     : null;
   const imageUrl = storedUrl ?? activeAsset?.externalUrl ?? challenge.legacyImageUrl ?? "/icons/roadiq-512.png";
+  const imageAttribution = activeAsset?.sourceType === "generated"
+    ? {
+        provider: "RoadIQ Image Factory",
+        creator: "RoadIQ",
+        licenseNote: "Published internal RoadIQ challenge asset.",
+      }
+    : challenge.legacyImageSourceUrl
+      ? {
+          provider: challenge.legacyImageProvider ?? "RoadIQ",
+          creator: challenge.legacyImageCreator ?? "RoadIQ",
+          sourceUrl: challenge.legacyImageSourceUrl,
+          licenseNote: challenge.legacyImageLicenseNote ?? "RoadIQ development asset.",
+        }
+      : {
+          provider: challenge.legacyImageProvider ?? "RoadIQ",
+          creator: challenge.legacyImageCreator ?? "RoadIQ",
+          licenseNote: challenge.legacyImageLicenseNote ?? "RoadIQ development asset.",
+        };
 
   return {
     id: challenge.stableId,
@@ -28,18 +46,7 @@ export async function toPublicChallenge(
     imageUrl,
     imageAlt: activeAsset?.imageAlt ?? challenge.imageAlt,
     imagePosition: activeAsset?.imagePosition ?? challenge.imagePosition,
-    imageAttribution: activeAsset?.sourceType === "generated"
-      ? {
-          provider: "RoadIQ Image Factory",
-          creator: "RoadIQ",
-          licenseNote: "Published internal RoadIQ challenge asset.",
-        }
-      : {
-          provider: challenge.legacyImageProvider ?? "RoadIQ",
-          creator: challenge.legacyImageCreator ?? "RoadIQ",
-          sourceUrl: challenge.legacyImageSourceUrl,
-          licenseNote: challenge.legacyImageLicenseNote ?? "RoadIQ development asset.",
-        },
+    imageAttribution,
     category: challenge.category,
     difficulty: challenge.difficulty,
     challengeType: challenge.challengeType,

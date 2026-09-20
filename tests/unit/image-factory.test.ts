@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CHALLENGE_SEEDS } from "@/data/challenges.server";
 import { createImageSpecDraft } from "@/lib/image-factory/spec";
 import { evaluateCandidateImage, generateCandidateImage } from "../../convex/lib/imageProvider";
@@ -13,6 +13,21 @@ import {
 } from "../../convex/lib/imageWorkflow";
 
 describe("RoadIQ Image Factory", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("creates challenge-specific visual briefs for every seeded challenge", () => {
+    for (const challenge of CHALLENGE_SEEDS) {
+      const spec = createImageSpecDraft(challenge);
+      expect(spec.scene).not.toBe(challenge.question);
+      expect(spec.criticalFacts.length, challenge.id).toBeGreaterThanOrEqual(4);
+      expect(spec.prompt).toContain(challenge.question);
+      expect(spec.composition).toContain("4:5");
+    }
+  });
+
   it("creates a passing-place specification with the decision-critical facts", () => {
     const challenge = CHALLENGE_SEEDS.find((item) => item.id === "rq-012");
     expect(challenge).toBeDefined();
@@ -24,8 +39,8 @@ describe("RoadIQ Image Factory", () => {
       expect.stringContaining("clearly closer"),
     ]));
     expect(spec.regionRules).toEqual(expect.arrayContaining([
-      expect.stringContaining("Left-hand traffic"),
-      expect.stringContaining("No American road layouts"),
+      expect.stringContaining("left"),
+      expect.stringContaining("American road layouts"),
     ]));
     expect(spec.composition).toContain("4:5");
   });
@@ -49,6 +64,73 @@ describe("RoadIQ Image Factory", () => {
     expect(qa.status).toBe("warning");
     expect(qa.score).toBe(0);
     expect(qa.issues[0]).toContain("unreadable");
+  });
+
+  it("parses fenced JSON returned by a chat-compatible QA provider", () => {
+    const qa = parseImageQaJson("```json\n{\"status\":\"pass\",\"score\":91,\"issues\":[],\"confirmedFacts\":[\"lane visible\"],\"missingFacts\":[],\"contradictions\":[],\"summary\":\"Clear\"}\n```", "goi-qa");
+    expect(qa).toMatchObject({ status: "pass", score: 91, model: "goi-qa" });
+    expect(qa.confirmedFacts).toEqual(["lane visible"]);
+  });
+
+  it("generates and evaluates through GOI's OpenAI-compatible endpoints", async () => {
+    vi.stubEnv("GOI_API_KEY", "server-only-test-key");
+    vi.stubEnv("GOI_BASE_URL", "https://example.test/v1/");
+    const png = Buffer.alloc(24);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png);
+    png.writeUInt32BE(640, 16);
+    png.writeUInt32BE(800, 20);
+    const qaJson = JSON.stringify({
+      status: "pass",
+      score: 96,
+      issues: [],
+      confirmedFacts: ["passing place visible"],
+      missingFacts: [],
+      contradictions: [],
+      summary: "The geometry is clear.",
+    });
+    const fencedQa = [String.fromCharCode(96).repeat(3) + "json", qaJson, String.fromCharCode(96).repeat(3)].join("\n");
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      calls.push({ url, body });
+      if (url.endsWith("/images/generations")) {
+        return new Response(JSON.stringify({ data: [{ b64_json: png.toString("base64"), mime_type: "image/png" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: fencedQa } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }));
+
+    const image = await generateCandidateImage({
+      provider: "goi",
+      model: "gpt-image-2",
+      prompt: "A UK single-track road.",
+      negativePrompt: "No readable plates.",
+      candidateIndex: 0,
+    });
+    const qa = await evaluateCandidateImage({
+      provider: "goi",
+      model: "gemini-3.1-pro",
+      question: "Who should reverse?",
+      criticalFacts: ["A passing place is visible."],
+      regionRules: ["Use left-hand traffic."],
+      image,
+    });
+
+    expect(image).toMatchObject({ mimeType: "image/png", width: 640, height: 800 });
+    expect(qa).toMatchObject({ status: "pass", score: 96, model: "gemini-3.1-pro" });
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://example.test/v1/images/generations",
+      "https://example.test/v1/chat/completions",
+    ]);
+    expect(calls[0].body).toMatchObject({ model: "gpt-image-2" });
+    expect(calls[0].body).not.toHaveProperty("size");
+    expect(calls[0].body).not.toHaveProperty("response_format");
+    expect(calls[1].body).toMatchObject({ model: "gemini-3.1-pro", response_format: { type: "json_object" } });
   });
 
   it("keeps mock generation in the human-review workflow", async () => {

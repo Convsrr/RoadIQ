@@ -101,12 +101,12 @@ export const importChallenges = mutation({
         explanation: source.explanation,
         imageAlt: source.imageAlt,
         imagePosition: source.imagePosition,
-        legacyImageUrl: source.imageUrl || undefined,
         legacyImageProvider: source.imageAttribution.provider,
         legacyImageCreator: source.imageAttribution.creator,
-        legacyImageSourceUrl: source.imageAttribution.sourceUrl,
         legacyImageLicenseNote: source.imageAttribution.licenseNote,
         updatedAt: now,
+        ...(source.imageUrl ? { legacyImageUrl: source.imageUrl } : {}),
+        ...(source.imageAttribution.sourceUrl ? { legacyImageSourceUrl: source.imageAttribution.sourceUrl } : {}),
       };
       const challengeId = existing
         ? existing._id
@@ -183,6 +183,14 @@ export const importChallenges = mutation({
           ...source.imageSpec,
           promptVersion: 1,
           createdAt: now,
+          updatedAt: now,
+        });
+      } else if (spec.promptVersion <= 1) {
+        // Upgrade the initial generated brief on re-seed without overwriting
+        // an operator-edited spec, which always has a later prompt version.
+        await ctx.db.patch(spec._id, {
+          ...source.imageSpec,
+          promptVersion: spec.promptVersion + 1,
           updatedAt: now,
         });
       }
