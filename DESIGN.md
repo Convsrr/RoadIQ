@@ -21,12 +21,13 @@ Geist is the single UI family. Display headlines use `clamp()` with tight negati
 - Gameplay becomes a balanced image/question split at large widths and a single column on mobile.
 - Mobile retains a floating four-tab navigation with 48px minimum targets and safe-area padding.
 - Content pages use generous heading space followed by bounded surface cards.
+- First-time onboarding uses a single full-viewport cinematic hero: restrained navigation, oversized `READ THE ROAD` display type, concise product copy, and two routes into the same real first challenge.
 
 ## Interaction
 
 - Primary actions are black/white pills with clear focus rings and restrained press scaling.
-- The onboarding question deck is an interactive selector: desktop cards retain the layered fan, mobile cards use horizontal scroll snapping, and a shared readable panel previews the selected real challenge.
-- Selecting `Try this question` starts with the active preview instead of discarding the user’s choice.
+- The onboarding background video is decorative, muted, inline and looping. It resumes after incidental browser pauses for standard-motion users, but remains hidden when `prefers-reduced-motion` is active.
+- Both onboarding calls to action start the first real runtime challenge; the hero never introduces a separate demo or mocked question.
 - Answer options are full-row targets with both border and fill state changes.
 - Result states combine icons, text, and semantic color so meaning never relies on color alone.
 - Motion is short and functional; all animations collapse under `prefers-reduced-motion`.
